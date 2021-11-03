@@ -69,7 +69,7 @@ private:
         }
     }
 
-    void handle_read_body(const boost::system::error_code &error,) {
+    void handle_read_body(const boost::system::error_code &error) {
         if (!error) {
             cout.write(read_msg_.body(), read_msg_.body_length());
             cout << endl;
