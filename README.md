@@ -1,5 +1,9 @@
 # adhoc-simulation
 
+## 介绍
+
+本项目用于模拟adhoc网络中的节点通信，并将在此基础上实现模拟拓扑网络和路由功能。
+
 ## 配置开发环境
 
 本项目使用CMake来生成辅助项目构建，建议使用CLion进行代码的开发和调试。
@@ -22,6 +26,10 @@ set(Boost_INCLUDE_DIR /Users/xxx/boost_1_77_0)
 
 然后CLion会自动索引Boost库的代码（此过程会花费很长时间），在索引完成之后就可以编译并运行server和client这两个目标文件了。
 
+### 可能会遇到的问题
+
+
+
 ## 目录结构
 
 - CMakeLists.example.txt：cmake编译器的配置文件，其中包含了对boost库地址对引用。**若要运行请先重命名为CMakeLists.txt并修改boost库的地址。**
@@ -30,3 +38,8 @@ set(Boost_INCLUDE_DIR /Users/xxx/boost_1_77_0)
 - message.h：通信消息message类的定义。包含数据的字节表示、编码、解码功能的实现。
 - server.h：cs通信server端的实现。
 - client.h：cs通信client端的实现。
+
+## 规范
+
+git commit消息建议尽可能使用[Git Commit Message Conventions](https://docs.google.com/document/d/1QrDFcIiPjSLDn3EL15IJygNPiHORgU1_OOAqWjiDU5Y/edit#heading=h.t7ifoyph8bd3) 或者[Commit message 和 Change log 编写指南](https://www.ruanyifeng.com/blog/2016/01/commit_message_change_log.html) 。
+
