@@ -20,6 +20,12 @@ typedef deque<ad_hoc_message> ad_hoc_message_queue;
 
 class ad_hoc_client {
 public:
+    /**
+     *
+     *
+     * @param endpoint
+     * @param io_context
+     */
     ad_hoc_client(tcp::endpoint &endpoint, boost::asio::io_context &io_context)
             : socket(io_context),
               io_context(io_context) {
@@ -30,6 +36,13 @@ public:
                                      boost::asio::placeholders::error));
     }
 
+    /**
+     * 主动发送消息
+     *
+     * 此函数由用户/上层服务在用户线程主动调用，但并不是立即发送，而是由io_context在事件循环中轮训到发数据事件时调用do_write函数
+     *
+     * @param msg 待发消息
+     */
     void write(const ad_hoc_message &msg) {
         io_context.post(boost::bind(&ad_hoc_client::do_write, this, msg));
     }
@@ -43,6 +56,13 @@ public:
     }
 
 private:
+    /**
+     * 与server发起连接成功后的回调函数
+     *
+     * 在建立连接成功后，发起异步读操作，等待数据到来。
+     *
+     * @param error
+     */
     void handle_connect(const boost::system::error_code &error) {
         if (!error) {
             cout << "connected to " << socket.remote_endpoint().address() << ":" << socket.remote_endpoint().port()
@@ -57,6 +77,12 @@ private:
         }
     }
 
+    /**
+     * 读取消息首部的回调函数
+     * 同ad_hoc_session中的同名函数
+     *
+     * @param error
+     */
     void handle_read_header(const boost::system::error_code &error) {
         if (!error && read_msg_.decode_header()) {
             boost::asio::async_read(socket,
@@ -69,6 +95,12 @@ private:
         }
     }
 
+    /**
+     * 读取消息数据载荷的回调函数
+     * 同ad_hoc_session中的同名函数
+     *
+     * @param error
+     */
     void handle_read_body(const boost::system::error_code &error) {
         if (!error) {
             cout.write(read_msg_.body(), read_msg_.body_length());
@@ -83,6 +115,12 @@ private:
         }
     }
 
+    /**
+     * 发送消息的回调函数
+     * 同ad_hoc_session中的同名函数
+     *
+     * @param error
+     */
     void handle_write(const boost::system::error_code &error) {
         if (!error) {
             cout << "sent " << write_msgs_.front().length() << " bytes to " << write_msgs_.front().id() << ":\n\t";
@@ -102,6 +140,13 @@ private:
         }
     }
 
+    /**
+     * 发送消息函数
+     *
+     * 发送过程同session的deliver函数
+     *
+     * @param msg
+     */
     void do_write(ad_hoc_message msg) {
         bool write_in_progress = !write_msgs_.empty();
         write_msgs_.push_back(msg);
@@ -119,6 +164,7 @@ private:
         socket.close();
     }
 
+    //数据成员，同ad_hoc_session中的对应成员。
     boost::asio::io_context &io_context;
     tcp::socket socket;
     ad_hoc_message read_msg_;
