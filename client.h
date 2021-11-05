@@ -21,10 +21,14 @@ typedef deque<ad_hoc_message> ad_hoc_message_queue;
 class ad_hoc_client {
 public:
     /**
+     * ad_hoc_client 构造函数
      *
+     * client有两个方向的数据流动：发送和接收。
+     * 其中client的数据接收事件是在IO线程上触发和运行的，由io_context对象负责管理
+     * 而client的数据发送事件则是在用户线程上触发，但也在IO线程上运行。
      *
-     * @param endpoint
-     * @param io_context
+     * @param endpoint 将要连接的server的IP和端口
+     * @param io_context 接收数据的IO事件循环
      */
     ad_hoc_client(tcp::endpoint &endpoint, boost::asio::io_context &io_context)
             : socket(io_context),
