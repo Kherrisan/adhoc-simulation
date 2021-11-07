@@ -20,7 +20,7 @@ public:
      * @return
      */
     char *data() {
-        return data_;    //整个报文开头
+        return data_;
     }
 
     /**
@@ -29,7 +29,7 @@ public:
      * @return
      */
     char *body() {
-        return data_ + ADHOCMESSAGE_HEADER_LENGTH;   //数据body起始位置
+        return data_ + ADHOCMESSAGE_HEADER_LENGTH;
     };
 
     /**
@@ -38,7 +38,7 @@ public:
      * @return
      */
     size_t length() const {
-        return ADHOCMESSAGE_HEADER_LENGTH + body_length_;   //消息总长度
+        return ADHOCMESSAGE_HEADER_LENGTH + body_length_;
     }
 
     /**

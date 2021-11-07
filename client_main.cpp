@@ -18,13 +18,13 @@ int main(int argc, char **argv) {
     ad_hoc_message msg;
 
     while (true) {
-        int remotePort; //要发送的端口
+        int remotePort;
         string line;
-        int localPort = client->get_sent_id();  //获取本节点的ID号
+        int localPort = client->get_sent_id();
         msg.sendid(localPort);
         cin >> remotePort >> line;
         msg.receiveid(remotePort);
-        msg.body_length(line.size());  //获取输入的文字消息总长度
+        msg.body_length(line.size());
         memcpy(msg.body(), line.c_str(), msg.body_length());
         msg.encode_header();
         client->write(msg);

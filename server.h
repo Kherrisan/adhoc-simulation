@@ -93,12 +93,12 @@ public:
     {
         for(int k = 0;k<MAX;k++)
         {
-            if(node[k]==msg.receiveid())       //msg.id()是要消息要发送到的ID号
+            if(node[k]==msg.receiveid())       //msg.receiveid()是要消息要发送到的ID号
             {
                 int row = k;
                 for(int j = 0;j<MAX;j++)
                 {
-                    if(node[j] == msg.sendid())
+                    if(node[j] == msg.sendid())      //msg.sendid()是要发送方的ID号
                     {
                         int column = j;
                         if(matrux[column][row] == 1)
@@ -134,7 +134,7 @@ public:
         }
     }
 private:
-    unordered_map<int, ad_hoc_participant_ptr> session_map;    //无序关联式容器，键的类型，值的类型
+    unordered_map<int, ad_hoc_participant_ptr> session_map;
     int node[MAX];
     int matrux[MAX][MAX];
 };
