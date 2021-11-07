@@ -5,7 +5,7 @@
 #ifndef ADHOC_SIMULATION_MESSAGE_H
 #define ADHOC_SIMULATION_MESSAGE_H
 
-const int ADHOCMESSAGE_HEADER_LENGTH = 8;
+const int ADHOCMESSAGE_HEADER_LENGTH = 12;
 const int ADHOCMESSAGE_MAX_BODY_LENGTH = 1024;
 
 class ad_hoc_message {
@@ -58,13 +58,22 @@ public:
     void body_length(size_t length) {
         body_length_ = length;
     }
-
-    int id() const {
-        return id_;
+    //接收的ID号码
+    int receiveid() const {
+        return receive_id;
     }
 
-    void id(int id) {
-        id_ = id;
+    void receiveid(int id) {
+        receive_id = id;
+    }
+
+    //发送的ID号码
+    int sendid() const{
+        return send_id;
+    }
+
+    void sendid(int id) {
+        send_id = id;
     }
 
     /**
@@ -72,8 +81,9 @@ public:
      */
     void encode_header() {
         //根据协议中各个字段的偏移，进行编码
-        memcpy(data_, &id_, sizeof(id_));
-        memcpy(data_ + sizeof(id_), &body_length_, sizeof(int));
+        memcpy(data_, &send_id, sizeof(send_id));
+        memcpy(data_ + sizeof(send_id), &receive_id, sizeof(receive_id));
+        memcpy(data_ + sizeof(send_id) + sizeof(receive_id), &body_length_, sizeof(int));
     }
 
     /**
@@ -83,8 +93,9 @@ public:
      */
     bool decode_header() {
         //根据协议中各个字段的偏移，进行解码
-        id_ = *reinterpret_cast<int *>(data_);
-        body_length_ = *reinterpret_cast<int *>(data_ + 4);
+        send_id = *reinterpret_cast<int *>(data_);
+        receive_id = *reinterpret_cast<int *>(data_+ sizeof(send_id));
+        body_length_ = *reinterpret_cast<int *>(data_ + 8);
         if (body_length_ < 0 || body_length_ > ADHOCMESSAGE_MAX_BODY_LENGTH) {
             body_length_ = 0;
             return false;
@@ -97,7 +108,8 @@ private:
     char data_[ADHOCMESSAGE_HEADER_LENGTH + ADHOCMESSAGE_MAX_BODY_LENGTH];
 
     //消息首部各字段，未来可以在此处添加字段
-    int id_;
+    int send_id;
+    int receive_id;
     size_t body_length_;
 };
 

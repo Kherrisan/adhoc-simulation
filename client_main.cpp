@@ -5,6 +5,8 @@
 #include <thread>
 #include "client.h"
 
+
+
 int main(int argc, char **argv) {
     cout << "start client!" << endl;
     string strServerPort(argv[1]);
@@ -17,8 +19,10 @@ int main(int argc, char **argv) {
     while (true) {
         int remotePort;
         string line;
+        int localPort = client->get_sent_id();
+        msg.sendid(localPort);
         cin >> remotePort >> line;
-        msg.id(remotePort);
+        msg.receiveid(remotePort);
         msg.body_length(line.size());
         memcpy(msg.body(), line.c_str(), msg.body_length());
         msg.encode_header();
