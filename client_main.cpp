@@ -20,9 +20,9 @@ int main(int argc, char **argv) {
         int remotePort;
         string line;
         int localPort = client->get_sent_id();
-        msg.sendid(localPort);
+        msg.sender_id(localPort);
         cin >> remotePort >> line;
-        msg.receiveid(remotePort);
+        msg.receiver_id(remotePort);
         msg.body_length(line.size());
         memcpy(msg.body(), line.c_str(), msg.body_length());
         msg.encode_header();

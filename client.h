@@ -19,6 +19,22 @@ using namespace std;
 
 typedef deque<ad_hoc_message> ad_hoc_message_queue;
 
+class ad_hoc_client;
+
+class ad_hoc_client_message_handler {
+public:
+    virtual void handle(ad_hoc_client &client, ad_hoc_message &msg) = 0;
+};
+
+class ad_hoc_client_default_handler : public ad_hoc_client_message_handler {
+public:
+    void handle(ad_hoc_client &client, ad_hoc_message &msg) override {
+        if (msg.sender_id() == -1) {
+
+        }
+    }
+};
+
 class ad_hoc_client {
 public:
     /**
@@ -32,9 +48,10 @@ public:
     * @param io_context 接收数据的IO事件循环
     */
 
-    ad_hoc_client(tcp::endpoint &endpoint, boost::asio::io_context &io_context)
+    ad_hoc_client(tcp::endpoint &endpoint, boost::asio::io_context &io_context, ad_hoc_client_message_handler &handler)
             : socket(io_context),
-              io_context(io_context) {
+              io_context(io_context),
+              handler(handler) {
         //第一个参数指向某个IP主机的IP端口，第二个是偏函数对象，实际代码地址指向成员函数handle_connect
         socket.async_connect(endpoint,
                              boost::bind(
@@ -42,6 +59,7 @@ public:
                                      this,
                                      boost::asio::placeholders::error));
     }
+
     /**
         * 主动发送消息
         *
@@ -56,14 +74,16 @@ public:
     void close() {
         io_context.post(boost::bind(&ad_hoc_client::do_close, this));
     }
-    int get_sent_id()
-    {
+
+    int get_sent_id() {
         return socket.local_endpoint().port();
     }
 
     ~ad_hoc_client() {
 
     }
+
+    boost::asio::io_context &io_context;
 
 private:
     /**
@@ -87,6 +107,7 @@ private:
             cerr << error << endl;
         }
     }
+
     /**
         * 读取消息首部的回调函数
         * 同ad_hoc_session中的同名函数
@@ -104,6 +125,7 @@ private:
             do_close();
         }
     }
+
     /**
         * 读取消息数据载荷的回调函数
         * 同ad_hoc_session中的同名函数
@@ -112,8 +134,10 @@ private:
         */
     void handle_read_body(const boost::system::error_code &error) {
         if (!error) {
+            cout << "[debug]read from " << read_msg_.sender_id() << ": ";
             cout.write(read_msg_.body(), read_msg_.body_length());
             cout << endl;
+            handler.handle(*this, read_msg_);
             boost::asio::async_read(socket,
                                     boost::asio::buffer(read_msg_.data(), ADHOCMESSAGE_HEADER_LENGTH),
                                     boost::bind(&ad_hoc_client::handle_read_header,
@@ -123,6 +147,7 @@ private:
             do_close();
         }
     }
+
     /**
         * 发送消息的回调函数
         * 同ad_hoc_session中的同名函数
@@ -131,7 +156,8 @@ private:
         */
     void handle_write(const boost::system::error_code &error) {
         if (!error) {
-            cout << "sent " << write_msgs_.front().length() << " bytes to " << write_msgs_.front().receiveid() << ":\n\t";
+            cout << "sent " << write_msgs_.front().length() << " bytes to " << write_msgs_.front().receiver_id()
+                 << ":\n\t";
             cout.write(write_msgs_.front().body(), write_msgs_.front().body_length());
             cout << endl;
             write_msgs_.pop_front();
@@ -147,6 +173,7 @@ private:
             do_close();
         }
     }
+
     /**
         * 发送消息函数
         *
@@ -170,8 +197,8 @@ private:
     void do_close() {
         socket.close();
     }
-    //数据成员，同ad_hoc_session中的对应成员。
-    boost::asio::io_context &io_context;
+
+    ad_hoc_client_message_handler handler;
     tcp::socket socket;
     ad_hoc_message read_msg_;
     ad_hoc_message_queue write_msgs_;
