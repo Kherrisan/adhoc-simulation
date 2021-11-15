@@ -11,7 +11,7 @@
 #include <boost/shared_ptr.hpp>
 #include <boost/asio.hpp>
 
-
+#include "pipeline.h"
 #include "message.h"
 
 using boost::asio::ip::tcp;
@@ -42,6 +42,11 @@ public:
                                      this,
                                      boost::asio::placeholders::error));
     }
+
+    void write(int receiver, char *data, int length) {
+
+    }
+
     /**
         * 主动发送消息
         *
@@ -56,14 +61,16 @@ public:
     void close() {
         io_context.post(boost::bind(&ad_hoc_client::do_close, this));
     }
-    int get_sent_id()
-    {
+
+    int get_sent_id() {
         return socket.local_endpoint().port();
     }
 
     ~ad_hoc_client() {
 
     }
+
+    ad_hoc_client_pipeline pipeline;
 
 private:
     /**
@@ -79,14 +86,29 @@ private:
                  << endl;
             cout << "local port is " << socket.local_endpoint().port() << endl;
 
-            boost::asio::async_read(socket,
-                                    boost::asio::buffer(read_msg_.data(), ADHOCMESSAGE_HEADER_LENGTH),
-                                    boost::bind(&ad_hoc_client::handle_read_header, this,
-                                                boost::asio::placeholders::error));
+            socket.async_read_some(boost::asio::buffer(data, 1024),
+                                   boost::bind(&ad_hoc_client::handle_read,
+                                               this,
+                                               boost::asio::placeholders::error,
+                                               boost::asio::placeholders::bytes_transferred));
         } else {
             cerr << error << endl;
         }
     }
+
+    void handle_read(const boost::system::error_code &error, size_t bytes_transferred) {
+        if (!error) {
+            pipeline.handle_channel_read(data, bytes_transferred);
+            socket.async_read_some(boost::asio::buffer(data, 1024),
+                                   boost::bind(&ad_hoc_client::handle_read,
+                                               this,
+                                               boost::asio::placeholders::error,
+                                               boost::asio::placeholders::bytes_transferred));
+        } else {
+            cerr << error << endl;
+        }
+    }
+
     /**
         * 读取消息首部的回调函数
         * 同ad_hoc_session中的同名函数
@@ -104,6 +126,7 @@ private:
             do_close();
         }
     }
+
     /**
         * 读取消息数据载荷的回调函数
         * 同ad_hoc_session中的同名函数
@@ -123,6 +146,7 @@ private:
             do_close();
         }
     }
+
     /**
         * 发送消息的回调函数
         * 同ad_hoc_session中的同名函数
@@ -131,7 +155,8 @@ private:
         */
     void handle_write(const boost::system::error_code &error) {
         if (!error) {
-            cout << "sent " << write_msgs_.front().length() << " bytes to " << write_msgs_.front().receiveid() << ":\n\t";
+            cout << "sent " << write_msgs_.front().length() << " bytes to " << write_msgs_.front().receiveid()
+                 << ":\n\t";
             cout.write(write_msgs_.front().body(), write_msgs_.front().body_length());
             cout << endl;
             write_msgs_.pop_front();
@@ -147,6 +172,7 @@ private:
             do_close();
         }
     }
+
     /**
         * 发送消息函数
         *
@@ -170,11 +196,13 @@ private:
     void do_close() {
         socket.close();
     }
+
     //数据成员，同ad_hoc_session中的对应成员。
     boost::asio::io_context &io_context;
     tcp::socket socket;
     ad_hoc_message read_msg_;
     ad_hoc_message_queue write_msgs_;
+    char data[1024];
 };
 
 #endif //ADHOC_SIMULATION_CLIENT_H
