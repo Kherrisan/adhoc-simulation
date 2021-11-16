@@ -111,7 +111,7 @@ public:
 
             }
         }
-        return 0;
+        return false;
     }
     /**
         * scope转发消息函数
@@ -131,14 +131,13 @@ public:
 //            if(true)
             {
                 session_map[msg.receiveid()]->deliver(msg);    //调用ID号对应的session去发送信息
-                cout<<"Send Success!"<<endl;
+                cout<<"[debug] sender: "<<msg.sendid()<<", receiver: "<<msg.receiveid()<<", orig: "<<msg.sourceid()<<", dst: "<<msg.destid()<<endl;
                 return true;
             }
             else
             {
-                cout<<"Send Fail!"<<endl;
-                replay_error(msg.sendid());
-                //msg.sendid()
+                cout<<"[error] sender: "<<msg.sendid()<<", receiver: "<<msg.receiveid()<<" not directly connected."<<endl;
+                reply_error(msg);
                 return false;
             }
 
@@ -146,13 +145,14 @@ public:
         return false;
     }
 
-    void replay_error(int id){
-
-    }
-
-    void send_reply(int sendid, int receiveid, bool type)
-    {
-
+    void reply_error(const ad_hoc_message &msg){
+        ad_hoc_message err(msg);
+        err.msg_type(3);
+        err.sendid(msg.receiveid());
+        err.receiveid(msg.sendid());
+        err.destid(msg.sourceid());
+        err.sourceid(msg.destid());
+        session_map[msg.sendid()]->deliver(err);
     }
 
 private:
@@ -189,7 +189,7 @@ public:
         scope.join(id(), shared_from_this());
         //发起异步的读数据操作，这个读数据操作只负责读取头部，参数：
         //1.socket。和client的连接socket，从该socket的接收缓冲区中读字节数据。
-        //2.buffer。创建一个地址是read_msg_的数据的起始位置，长度是ADHOCMESSAGE_HEADER_LENGTH的buffer。
+        //2.path_discovery_timers。创建一个地址是read_msg_的数据的起始位置，长度是ADHOCMESSAGE_HEADER_LENGTH的buffer。
         //      当async_read读满了这个buffer（读到了ADHOCMESSAGE_HEADER_LENGTH个字节），则本次读数据完成，会调用回调函数handle_read_header。
         //3.回调函数。通过bind方法绑定了一个参数：this指针，后两个参数是占位符。
         boost::asio::async_read(socket_,
