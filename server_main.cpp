@@ -16,7 +16,6 @@ int main(int argc, char **argv) {
     boost::asio::io_context io_context;
     tcp::endpoint endpoint(boost::asio::ip::address::from_string("127.0.0.1"), port);
     auto *server = new ad_hoc_server(endpoint, io_context);
-    server->setup_wormhole_attack_model();
     io_context.run();
     return 0;
 }

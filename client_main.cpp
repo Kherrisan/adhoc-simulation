@@ -4,7 +4,7 @@
 #include <iostream>
 #include <thread>
 #include "client.h"
-
+#include "message.h"
 
 
 int main(int argc, char **argv) {
@@ -16,14 +16,17 @@ int main(int argc, char **argv) {
     //启动一个线程来运行io_context.run，这样接收数据的流程就不会被用户线程的操作干扰。
     std::thread t(boost::bind(&boost::asio::io_service::run, &io_context));
     ad_hoc_message msg;
+
     while (true) {
         int remotePort;
         string line;
+        int type;
         int localPort = client->get_sent_id();
-        msg.sender_id(localPort);
-        cin >> remotePort >> line;
-        msg.receiver_id(remotePort);
+        msg.sendid(localPort);
+        cin >> remotePort >> line >> type;
+        msg.receiveid(remotePort);
         msg.body_length(line.size());
+        msg.msg_type(type);
         memcpy(msg.body(), line.c_str(), msg.body_length());
         msg.encode_header();
         client->write(msg);

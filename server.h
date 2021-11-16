@@ -13,12 +13,11 @@
 #include <boost/asio.hpp>
 #include <unordered_map>
 #include <deque>
-
-#define  MAX  13
-
-#include <time.h>
+#include <ctime>
+#define  MAX  10
 
 #include "message.h"
+
 
 using boost::asio::ip::tcp;
 using namespace std;
@@ -44,65 +43,76 @@ public:
         session_map[id] = participant;
 
         static int i = 0;
-        if (i >= 0) {
+        if(i>=0) {
             node[i] = id;
             i++;
         }           //每进来一个ID号就作为邻接矩阵的顶点
     }
 
-    void setup() {
-        Create_MatrixUDG();
-        print_UDG();
-    }
-
-    void Create_MatrixUDG(int seed = 0)    //创建网络拓扑图
+    void Create_MatrixUDG()    //创建网络拓扑图
     {
-        memset(matrix, 0, MAX * MAX);
-        srand((unsigned) seed);
-        for (int col = 0; col < MAX; col++) {
-            for (int row = 0; row < MAX; row++) {
-                matrix[col][row] = matrix[row][col] = (col == row) || rand() % MAX > int(MAX / 2);
+        for(int column = 0 ; column < MAX;column++)
+        {
+            for(int low = 0; low < MAX;low++)
+            {
+                matrix[column][low]=0;
+            }
+        }
+
+        srand((unsigned)time(NULL));
+        for(int column = 0 ; column < MAX;column++)
+        {
+            for(int low = 0; low < MAX;low++)
+            {
+                if(rand() % MAX > int(MAX/2) && column!=low)
+                {
+                    matrix[column][low] = 1;
+                    matrix[low][column] = 1;
+                }
             }
         }
     }
-
     void print_UDG()   //打印图
     {
-        cout << "The node network topology is as follows: " << endl;
-        for (int i = 0; i < MAX; i++) {
-            for (int j = 0; j < MAX; j++) {
+        cout<<"The node network topology is as follows: "<<endl;
+        for(int i = 0;i<MAX;i++)
+        {
+            for (int j = 0; j < MAX; j++)
+            {
                 cout << matrix[i][j] << " ";
 
             }
             cout << endl;
         }
     }
-
     void leave(int id) {
         session_map.erase(id);
     }
 
     bool judge_deliver(const ad_hoc_message &msg)   //判断是否转发消息
     {
-        for (int k = 0; k < MAX; k++) {
-            if (node[k] == msg.receiver_id())       //msg.receiver_id()是要消息要发送到的ID号
+        for(int k = 0;k<MAX;k++)
+        {
+            if(node[k]==msg.receiveid())       //msg.receiveid()是要消息要发送到的ID号
             {
                 int row = k;
-                for (int j = 0; j < MAX; j++) {
-                    if (node[j] == msg.sender_id())      //msg.sender_id()是要发送方的ID号
+                for(int j = 0;j<MAX;j++)
+                {
+                    if(node[j] == msg.sendid())      //msg.sendid()是要发送方的ID号
                     {
                         int column = j;
-                        if (matrix[column][row] == 1) {
+                        if(matrix[column][row] == 1)
+                        {
                             return true;
                         }
+
                     }
                 }
 
             }
         }
-        return false;
+        return 0;
     }
-
     /**
         * scope转发消息函数
         *
@@ -112,41 +122,43 @@ public:
         * @return
         */
     bool deliver(const ad_hoc_message &msg) {
-        if (session_map.find(msg.receiver_id()) == session_map.end()) { //没有查到相应的ID，就返回错误
+        if (session_map.find(msg.receiveid()) == session_map.end()) { //没有查到相应的ID，就返回错误
             return false;
-        } else {
-//            if (judge_deliver(msg))       //根据网络拓扑图判断是否能转发信息
-//            {
-//                session_map[msg.receiver_id()]->deliver(msg);    //调用ID号对应的session去发送信息
-//                return true;
-//            }
-            broadcast(msg);
         }
+        else
+        {
+            if(judge_deliver(msg))       //根据网络拓扑图判断是否能转发信息
+//            if(true)
+            {
+                session_map[msg.receiveid()]->deliver(msg);    //调用ID号对应的session去发送信息
+                cout<<"Send Success!"<<endl;
+                return true;
+            }
+            else
+            {
+                cout<<"Send Fail!"<<endl;
+                replay_error(msg.sendid());
+                //msg.sendid()
+                return false;
+            }
+
+        }
+        return false;
     }
 
-    /**
-     * 在 sender 所能直接联通(一跳)的范围内广播该消息
-     *
-     * @param msg
-     */
-    void broadcast(const ad_hoc_message &msg) {
-        for (int i = 0; i < MAX; i++) {
-            if (node[i] == msg.sender_id()) {
-                for (int j = 0; j < MAX; j++) {
-                    if (matrix[i][j]) {
-                        session_map[node[j]]->deliver(msg);
-                    }
-                }
-                break;
-            }
-        }
+    void replay_error(int id){
+
+    }
+
+    void send_reply(int sendid, int receiveid, bool type)
+    {
+
     }
 
 private:
     unordered_map<int, ad_hoc_participant_ptr> session_map;
     int node[MAX];
     int matrix[MAX][MAX];
-
 };
 
 
@@ -169,7 +181,6 @@ public:
     tcp::socket &socket() {
         return socket_;
     }
-
     /**
      * 启动session接收消息的循环
      */
@@ -189,7 +200,6 @@ public:
                                         boost::asio::placeholders::error,
                                         boost::asio::placeholders::bytes_transferred));
     }
-
     /**
         * 读消息头部的回调函数
         *
@@ -212,7 +222,6 @@ public:
                                             boost::asio::placeholders::error));
         }
     }
-
     /**
         * 读取消息中的数据载荷的回调函数
         *
@@ -223,9 +232,10 @@ public:
     void handle_read_body(const boost::system::error_code &error) {
         if (!error) {
             string body(read_msg_.body(), read_msg_.body_length());
-            cout << "[" << id() << "->" << read_msg_.receiver_id() << "] " << body << endl;
+            cout << "[" << id() << "->" << read_msg_.receiveid() << "] " << body << endl;
             //由scope去查询该message里的目的ID，进行消息转发。
             scope.deliver(read_msg_);
+
             //发起下一次异步的读操作，等待读取的对象为下一个数据包的首部。
             read_msg_ = ad_hoc_message();
             boost::asio::async_read(socket_,
@@ -237,7 +247,6 @@ public:
                                             boost::asio::placeholders::bytes_transferred));
         }
     }
-
     /**
         * 发送数据成功后的回调函数
         *
@@ -268,7 +277,6 @@ public:
             scope.leave(id());
         }
     }
-
     /**
        * session主动发送数据的函数。
        *
@@ -318,17 +326,13 @@ public:
      * @param endpoint server要监听的端口
      * @param io_context 负责server收发消息的IO事件循环。当异步函数绑定好回调函数之后，需要运行io_context.run()来启动事件循环。
      */
-    ad_hoc_server(const tcp::endpoint &endpoint, boost::asio::io_context &io_context, ad_hoc_scope *scope)
-            : acceptor(io_context, endpoint),
-              io_context(io_context),
-              scope(scope) {
-    }
-
-    void setup() {
+    ad_hoc_server(const tcp::endpoint &endpoint, boost::asio::io_context &io_context) : acceptor(io_context, endpoint),
+                                                                                        io_context(io_context) {
         cout << "start listening at port " << endpoint.port() << endl;
-        scope->setup();
+        scope.Create_MatrixUDG();
+        scope.print_UDG();
         //创建一个空的session对象
-        ad_hoc_session_ptr new_session(new ad_hoc_session(io_context, *scope));
+        ad_hoc_session_ptr new_session(new ad_hoc_session(io_context, scope));
         //服务器异步监听端口，直到有新连接到来
         //等待连接建立后，acceptor得到的新的socket会被填充到session中
         //boost::bind 给回调函数绑定2个局部变量（this和new_session）作为头两个参数
@@ -341,7 +345,6 @@ public:
                                       boost::asio::placeholders::error
                               ));
     }
-
 
 private://接受client端主动发起的连接
     /**
@@ -356,9 +359,10 @@ private://接受client端主动发起的连接
             cout << "accept incoming connection: " << session->socket().remote_endpoint().address() << ":"
                  << session->id() << endl;
             //启动该session的接收消息的循环
+
             session->start();
             //同构造函数里的步骤，等待下一个新连接的到来
-            ad_hoc_session_ptr new_session(new ad_hoc_session(io_context, *scope));
+            ad_hoc_session_ptr new_session(new ad_hoc_session(io_context, scope));
             acceptor.async_accept(new_session->socket(),
                                   boost::bind(
                                           &ad_hoc_server::handle_accept,
@@ -373,7 +377,7 @@ private://接受client端主动发起的连接
 
     tcp::acceptor acceptor; //端口监听器，接收新的连接并创建一个对应的socket
     boost::asio::io_context &io_context;
-    ad_hoc_scope *scope; //scope对象，每个server有一个scope，维护ID->session的映射表
+    ad_hoc_scope scope; //scope对象，每个server有一个scope，维护ID->session的映射表
 };
 
 #endif //ADHOC_SIMULATION_SERVER_H
