@@ -26,6 +26,7 @@ void print(ad_hoc_message &msg) {
     cout << "[message] src: " << msg.sourceid() << ", dst: " << msg.destid() << ", sender: " << msg.sendid()
          << ", receiver: " << msg.receiveid() << ", type: " << msg.msg_type() << endl;
     if (msg.msg_type() == ORDINARY_MESSAGE) {
+        cout<<"[user_message] ";
         cout.write(msg.body(), msg.body_length());
         cout << endl;
     } else {
@@ -213,8 +214,8 @@ private:
 
     void handle_user_message(ad_hoc_message msg) {
         if (id() == msg.destid()) {
-            cout.write(read_msg_.body(), read_msg_.body_length());
-            cout << endl;
+//            cout.write(read_msg_.body(), read_msg_.body_length());
+//            cout << endl;
         } else {
             //转发消息给下一跳
             auto route = routing_table_.route(msg.destid());
@@ -255,14 +256,8 @@ private:
      */
     void handle_rreq(ad_hoc_message &msg, ad_hoc_aodv_rreq &rreq) {
         int hops = rreq.hops + 1;
-        if (rreq_buffer.contains(rreq.orig, rreq.id)) {
-            return;
-        } else {
-            auto timer = this->rreq_buffer.setup_path_discovery_timer(io_context, rreq.orig, rreq.id);
-//            timer->async_wait(boost::bind(&ad_hoc_client::aodv_path_discovery_timeout, this, rreq.orig, rreq.id));
-        }
 
-        //建立反向路由表，便于反传rrep
+        //建立反向路由，便于反传rrep
         if (routing_table_.contains(rreq.orig)) {
             auto orig_route = routing_table_.route(rreq.orig);
             if (orig_route.seq < rreq.orig_seq) {
@@ -287,6 +282,13 @@ private:
         }
         routing_table_.print();
 
+        if (rreq_buffer.contains(rreq.orig, rreq.id)) {
+            return;
+        } else {
+            auto timer = this->rreq_buffer.setup_path_discovery_timer(io_context, rreq.orig, rreq.id);
+//            timer->async_wait(boost::bind(&ad_hoc_client::aodv_path_discovery_timeout, this, rreq.orig, rreq.id));
+        }
+
         //到达目的节点，返回rrep
         if (id() == rreq.dest) {
             this->aodv_seq += 1;
@@ -308,6 +310,7 @@ private:
 
     void handle_rrep(ad_hoc_message &msg, ad_hoc_aodv_rrep &rrep) {
         int hops = rrep.hops + 1;
+        rrep.hops = hops;
 
         if (id() == rrep.orig) {
             if (routing_table_.contains((rrep.dest))) {
@@ -323,7 +326,6 @@ private:
                 aodv_restart_route_timer(route);
             }
 
-            //pending message
             for (auto msg = waiting_rreq_msg_queue.begin(); msg != waiting_rreq_msg_queue.end();) {
                 if (msg->destid() == rrep.dest) {
                     write(*msg);
@@ -339,7 +341,8 @@ private:
                 dest_route.seq = rrep.dest_seq;
                 aodv_restart_route_timer(dest_route);
             } else {
-                ad_hoc_client_routing_table_item route{msg.destid(), msg.sendid(), rrep.dest_seq, hops};
+                ad_hoc_client_routing_table_item route{rrep.dest, msg.sendid(), rrep.dest_seq, hops};
+                routing_table_.insert(route);
                 aodv_restart_route_timer(routing_table_.route(rrep.dest));
             }
             auto route = routing_table_.route(rrep.orig);

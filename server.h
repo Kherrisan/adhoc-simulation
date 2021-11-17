@@ -71,7 +71,7 @@ public:
         }
         for (int column = 0; column < MAX; column++) {
             for (int low = 0; low < MAX; low++) {
-                if (rand() % MAX > int(MAX / 2) || column == low) {
+                if (rand() % MAX > (MAX * 1.0 / 1.3f) || column == low) {
                     matrix[column][low] = 1;
                     matrix[low][column] = 1;
                 }
@@ -128,12 +128,16 @@ public:
     bool deliver(ad_hoc_message &msg) {
         if (msg.receiveid() == AODV_BROADCAST_ADDRESS) {
             //一跳范围内广播
+            cout << "broadcasting" << endl;
+            print(msg);
             broadcast(msg);
         } else if (session_map.find(msg.receiveid()) == session_map.end()) { //没有查到相应的ID，就返回错误
             return false;
         } else {
             if (judge_deliver(msg))       //根据网络拓扑图判断是否能转发信息
             {
+                cout << "sending" << endl;
+                print(msg);
                 session_map[msg.receiveid()]->deliver(msg);    //调用ID号对应的session去发送信息
                 return true;
             } else {
@@ -312,8 +316,6 @@ public:
         //向队列末端添加一个待发送的消息，实际的发送顺序服从于发起deliver的先后顺序。
         write_msgs_.push_back(msg);
         if (!write_in_progress) {
-            cout << "writing" << endl;
-            print(msg);
             boost::asio::async_write(socket_,
                                      boost::asio::buffer(write_msgs_.front().data(),
                                                          write_msgs_.front().length()),
