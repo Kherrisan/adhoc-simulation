@@ -118,7 +118,7 @@ public:
     bool deliver(const ad_hoc_message &msg) {
         if (msg.receiveid() == AODV_BROADCAST_ADDRESS) {
             //一跳范围内广播
-
+            broadcast(msg);
         } else if (session_map.find(msg.receiveid()) == session_map.end()) { //没有查到相应的ID，就返回错误
             return false;
         } else {
@@ -138,6 +138,24 @@ public:
 
         }
         return false;
+    }
+
+    /**
+     * 在 sender 所能直接联通(一跳)的范围内广播该消息
+     *
+     * @param msg
+     */
+    void broadcast(const ad_hoc_message &msg) {
+        for (int i = 0; i < MAX; i++) {
+            if (node[i] == msg.sendid()) {
+                for (int j = 0; j < MAX; j++) {
+                    if (matrix[i][j] && session_map.find(node[j]) != session_map.end()) {
+                        session_map[node[j]]->deliver(msg);
+                    }
+                }
+                break;
+            }
+        }
     }
 
     void reply_error(const ad_hoc_message &msg) {

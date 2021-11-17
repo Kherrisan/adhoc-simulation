@@ -20,13 +20,13 @@ int main(int argc, char **argv) {
     while (true) {
         int remotePort;
         string line;
-        int type;
         int localPort = client->get_sent_id();
         msg.sendid(localPort);
-        cin >> remotePort >> line >> type;
-        msg.receiveid(remotePort);
+        cin >> remotePort >> line;
+        msg.destid(remotePort);
+        msg.sourceid(localPort);
         msg.body_length(line.size());
-        msg.msg_type(type);
+        msg.msg_type(ORDINARY_MESSAGE);
         memcpy(msg.body(), line.c_str(), msg.body_length());
         msg.encode_header();
         client->write(msg);
