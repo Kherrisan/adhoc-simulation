@@ -22,6 +22,18 @@ typedef deque<ad_hoc_message> ad_hoc_message_queue;
 
 const int AODV_HELLO_INTERVAL = 30;
 
+void print(ad_hoc_message &msg) {
+    cout << "[message] src: " << msg.sourceid() << ", dst: " << msg.destid() << ", sender: " << msg.sendid()
+         << ", receiver: " << msg.receiveid() << ", type: " << msg.msg_type() << endl;
+    if (msg.msg_type() == ORDINARY_MESSAGE) {
+        cout.write(msg.body(), msg.body_length());
+        cout << endl;
+    } else {
+        print_aodv(msg.body());
+    }
+    cout << endl;
+}
+
 class ad_hoc_client {
 public:
     /**
@@ -118,10 +130,11 @@ private:
         */
     void handle_read_body(const boost::system::error_code &error) {
         if (!error) {
+            cout << "received" << endl;
+            print(read_msg_);
             if (read_msg_.msg_type() == AODV_MESSAGE) {
                 handle_adov_message();
             } else {
-                //ordinary message
                 handle_user_message(read_msg_);
             }
             boost::asio::async_read(socket,
@@ -142,11 +155,15 @@ private:
         */
     void handle_write(const boost::system::error_code &error) {
         if (!error) {
-            cout << "sent " << write_msgs_.front().length() << " bytes to " << write_msgs_.front().receiveid()
-                 << ":\n\t";
-            cout.write(write_msgs_.front().body(), write_msgs_.front().body_length());
-            cout << endl;
-            cout << " Messege type is " << write_msgs_.front().msg_type();
+            auto msg = write_msgs_.front();
+            cout << "sent" << endl;
+            print_message(msg);
+            if (msg.msg_type() == ORDINARY_MESSAGE) {
+                cout.write(msg.body(), msg.body_length());
+                cout << endl;
+            } else {
+                print_aodv(msg.body());
+            }
             cout << endl;
             write_msgs_.pop_front();
             if (!write_msgs_.empty()) {
@@ -171,11 +188,13 @@ private:
         */
     void do_write(ad_hoc_message msg) {
         if (routing_table_.contains(msg.destid()) || msg.receiveid() == AODV_BROADCAST_ADDRESS) {
-            auto route = routing_table_.route(msg.destid());
+            if (routing_table_.contains(msg.destid())) {
+                auto route = routing_table_.route(msg.destid());
+                aodv_restart_route_timer(route);
+                msg.receiveid(route.next_hop);
+            }
             msg.sendid(id());
-            msg.receiveid(route.next_hop);
             msg.encode_header();
-            aodv_restart_route_timer(route);
             bool write_in_progress = !write_msgs_.empty();
             write_msgs_.push_back(msg);
             if (!write_in_progress) {
@@ -188,8 +207,7 @@ private:
             }
         } else {
             send_rreq(msg.destid(), -1);
-            //change to vector
-            waiting_rreq_msg_queue[msg.destid()] = msg;
+            waiting_rreq_msg_queue.push_back(msg);
         }
     }
 
@@ -225,8 +243,8 @@ private:
     }
 
     void aodv_restart_route_timer(ad_hoc_client_routing_table_item item) {
-        boost::asio::deadline_timer timer(io_context, boost::posix_time::seconds(10));
-        timer.async_wait(boost::bind(&ad_hoc_client::aodv_route_timeout, this, item));
+        boost::asio::deadline_timer timer(io_context, boost::posix_time::seconds(10000000));
+//        timer.async_wait(boost::bind(&ad_hoc_client::aodv_route_timeout, this, item));
     }
 
     /**
@@ -241,7 +259,7 @@ private:
             return;
         } else {
             auto timer = this->rreq_buffer.setup_path_discovery_timer(io_context, rreq.orig, rreq.id);
-            timer->async_wait(boost::bind(&ad_hoc_client::aodv_path_discovery_timeout, this, rreq.orig, rreq.id));
+//            timer->async_wait(boost::bind(&ad_hoc_client::aodv_path_discovery_timeout, this, rreq.orig, rreq.id));
         }
 
         //建立反向路由表，便于反传rrep
@@ -263,10 +281,11 @@ private:
                 aodv_restart_route_timer(orig_route);
             }
         } else {
-            ad_hoc_client_routing_table_item route{msg.sourceid(), msg.sendid(), rreq.orig_seq, hops};
+            ad_hoc_client_routing_table_item route{rreq.orig, msg.sendid(), rreq.orig_seq, hops};
             routing_table_.insert(route);
             aodv_restart_route_timer(route);
         }
+        routing_table_.print();
 
         //到达目的节点，返回rrep
         if (id() == rreq.dest) {
@@ -299,7 +318,7 @@ private:
                     aodv_restart_route_timer(routing_table_.route(rrep.dest));
                 }
             } else {
-                ad_hoc_client_routing_table_item route{msg.destid(), msg.receiveid(), rrep.dest_seq, hops};
+                ad_hoc_client_routing_table_item route{rrep.dest, msg.sendid(), rrep.dest_seq, hops};
                 routing_table_.insert(route);
                 aodv_restart_route_timer(route);
             }
@@ -308,7 +327,7 @@ private:
             for (auto msg = waiting_rreq_msg_queue.begin(); msg != waiting_rreq_msg_queue.end();) {
                 if (msg->destid() == rrep.dest) {
                     write(*msg);
-                    waiting_rreq_msg_queue.erase(msg);
+                    msg = waiting_rreq_msg_queue.erase(msg);
                 } else {
                     msg++;
                 }
@@ -326,6 +345,8 @@ private:
             auto route = routing_table_.route(rrep.orig);
             forward_rrep(msg, route.next_hop);
         }
+
+        routing_table_.print();
     }
 
     void handle_rerr(ad_hoc_message &msg, ad_hoc_aodv_rerr &rerr) {
@@ -347,13 +368,13 @@ private:
             auto timer = neighbors.timer(neighbor);
             neighbors.discard(neighbor);
             timer = neighbors.setup_neighbor_timer(io_context, neighbor);
-            timer->async_wait(boost::bind(&ad_hoc_client::aodv_neighbor_timeout, this, neighbor));
+//            timer->async_wait(boost::bind(&ad_hoc_client::aodv_neighbor_timeout, this, neighbor));
 
             auto route = routing_table_.route(neighbor);
             aodv_restart_route_timer(route);
         } else {
             auto timer = neighbors.setup_neighbor_timer(io_context, neighbor);
-            timer->async_wait(boost::bind(&ad_hoc_client::aodv_neighbor_timeout, this, neighbor));
+//            timer->async_wait(boost::bind(&ad_hoc_client::aodv_neighbor_timeout, this, neighbor));
 
             if (routing_table_.contains(neighbor)) {
                 auto route = routing_table_.route(neighbor);
@@ -400,7 +421,7 @@ private:
         memcpy(msg.body(), &rreq, msg.body_length());
         write(msg);
         auto timer = rreq_buffer.setup_path_discovery_timer(io_context, id(), rreq.id);
-        timer->async_wait(boost::bind(&ad_hoc_client::aodv_path_discovery_timeout, this, id(), rreq.id));
+//        timer->async_wait(boost::bind(&ad_hoc_client::aodv_path_discovery_timeout, this, id(), rreq.id));
     }
 
     void send_rrep(int orig, int dest, int dest_seq, int hops, int next_hop) {
@@ -410,6 +431,7 @@ private:
         msg.receiveid(next_hop);
         msg.sourceid(id());
         msg.destid(orig);
+        msg.msg_type(AODV_MESSAGE);
         msg.body_length(sizeof(rrep));
         memcpy(msg.body(), &rrep, msg.body_length());
         msg.encode_header();
@@ -444,7 +466,7 @@ private:
 
         hello_timer.cancel();
         hello_timer.expires_from_now(boost::posix_time::seconds(AODV_HELLO_INTERVAL));
-        hello_timer.async_wait(boost::bind(&ad_hoc_client::send_hello, this));
+//        hello_timer.async_wait(boost::bind(&ad_hoc_client::send_hello, this));
     }
 
     void aodv_path_discovery_timeout(int node, int rreq_id) {

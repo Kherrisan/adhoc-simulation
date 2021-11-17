@@ -106,14 +106,15 @@ public:
             cout << route.first << ": " << route.second.next_hop << ", " << route.second.seq << ", "
                  << route.second.hops << endl;
         }
+        cout << endl;
     }
 
 private:
     unordered_map<int, ad_hoc_client_routing_table_item> routes;
 };
 
-const int AODV_PATH_DISCOVERY_TIMEOUT = 10;
-const int AODV_HELLO_TIMEOUT = 30;
+const int AODV_PATH_DISCOVERY_TIMEOUT = 100000;
+const int AODV_HELLO_TIMEOUT = 100000;
 
 class ad_hoc_aodv_rreq_buffer {
 public:
@@ -172,5 +173,32 @@ public:
 
     unordered_map<int, boost::asio::deadline_timer *> neighbor_timer_map;
 };
+
+void print_aodv(const char *data) {
+    auto type = (int *) data;
+    switch (*type) {
+        case AODV_RREQ: {
+            auto rreq = (ad_hoc_aodv_rreq *) data;
+            cout << "[rreq] hops: " << rreq->hops << ", id: " << rreq->id << ", dest: " << rreq->dest << ", dest_seq: "
+                 << rreq->dest_seq << ", orig: " << rreq->orig << ", orig_seq: " << rreq->orig_seq << endl;
+            break;
+        }
+        case AODV_RREP: {
+            auto rrep = (ad_hoc_aodv_rrep *) data;
+            cout << "[rrep] hops: " << rrep->hops << ", dest: " << rrep->dest << ", dest_seq: "
+                 << rrep->dest_seq << ", orig: " << rrep->orig << endl;
+            break;
+        }
+        case AODV_RERR: {
+            auto rerr = (ad_hoc_aodv_rerr *) data;
+            cout << "[rerr] dest: " << rerr->dest << ", dest_seq: "
+                 << rerr->dest_seq << endl;
+            break;
+        }
+        case AODV_HELLO:
+            cout << "[hello]" << endl;
+            break;
+    }
+}
 
 #endif //ADHOC_SIMULATION_AODV_H

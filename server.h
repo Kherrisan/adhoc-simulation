@@ -18,6 +18,7 @@
 #define  MAX  10
 
 #include "message.h"
+#include "aodv.h"
 
 
 using boost::asio::ip::tcp;
@@ -25,12 +26,23 @@ using namespace std;
 //使用deque来实现串型消息队列，主要用于待发送消息队列
 typedef deque<ad_hoc_message> message_queue;
 
+void print(ad_hoc_message &msg) {
+    cout << "[message] src: " << msg.sourceid() << ", dst: " << msg.destid() << ", sender: " << msg.sendid()
+         << ", receiver: " << msg.receiveid() << ", type: " << msg.msg_type() << endl;
+    if (msg.msg_type() == ORDINARY_MESSAGE) {
+        cout.write(msg.body(), msg.body_length());
+        cout << endl;
+    } else {
+        print_aodv(msg.body());
+    }
+    cout << endl;
+}
 
 class ad_hoc_participant {
 public:
     virtual ~ad_hoc_participant() {}
 
-    virtual void deliver(const ad_hoc_message &msg) = 0;
+    virtual void deliver(ad_hoc_message &msg) = 0;
 };
 
 typedef boost::shared_ptr<ad_hoc_participant> ad_hoc_participant_ptr;
@@ -57,11 +69,9 @@ public:
                 matrix[column][low] = 0;
             }
         }
-
-        srand((unsigned) time(NULL));
         for (int column = 0; column < MAX; column++) {
             for (int low = 0; low < MAX; low++) {
-                if (rand() % MAX > int(MAX / 2) && column != low) {
+                if (rand() % MAX > int(MAX / 2) || column == low) {
                     matrix[column][low] = 1;
                     matrix[low][column] = 1;
                 }
@@ -115,7 +125,7 @@ public:
         * @param msg 待转发消息
         * @return
         */
-    bool deliver(const ad_hoc_message &msg) {
+    bool deliver(ad_hoc_message &msg) {
         if (msg.receiveid() == AODV_BROADCAST_ADDRESS) {
             //一跳范围内广播
             broadcast(msg);
@@ -123,15 +133,10 @@ public:
             return false;
         } else {
             if (judge_deliver(msg))       //根据网络拓扑图判断是否能转发信息
-//            if(true)
             {
                 session_map[msg.receiveid()]->deliver(msg);    //调用ID号对应的session去发送信息
-                cout << "[debug] sender: " << msg.sendid() << ", receiver: " << msg.receiveid() << ", orig: "
-                     << msg.sourceid() << ", dst: " << msg.destid() << endl;
                 return true;
             } else {
-                cout << "[error] sender: " << msg.sendid() << ", receiver: " << msg.receiveid()
-                     << " not directly connected." << endl;
                 reply_error(msg);
                 return false;
             }
@@ -145,11 +150,11 @@ public:
      *
      * @param msg
      */
-    void broadcast(const ad_hoc_message &msg) {
+    void broadcast(ad_hoc_message &msg) {
         for (int i = 0; i < MAX; i++) {
             if (node[i] == msg.sendid()) {
                 for (int j = 0; j < MAX; j++) {
-                    if (matrix[i][j] && session_map.find(node[j]) != session_map.end()) {
+                    if (j != i && matrix[i][j] && session_map.find(node[j]) != session_map.end()) {
                         session_map[node[j]]->deliver(msg);
                     }
                 }
@@ -158,7 +163,7 @@ public:
         }
     }
 
-    void reply_error(const ad_hoc_message &msg) {
+    void reply_error(ad_hoc_message &msg) {
         ad_hoc_message err(msg);
         err.msg_type(3);
         err.sendid(msg.receiveid());
@@ -246,8 +251,8 @@ public:
         */
     void handle_read_body(const boost::system::error_code &error) {
         if (!error) {
-            string body(read_msg_.body(), read_msg_.body_length());
-            cout << "[" << id() << "->" << read_msg_.receiveid() << "] " << body << endl;
+            cout << "received" << endl;
+            print(read_msg_);
             //由scope去查询该message里的目的ID，进行消息转发。
             scope.deliver(read_msg_);
             //发起下一次异步的读操作，等待读取的对象为下一个数据包的首部。
@@ -301,12 +306,14 @@ public:
        *
        * @param msg 待发送的数据
        */
-    void deliver(const ad_hoc_message &msg) override {
+    void deliver(ad_hoc_message &msg) override {
         //判断队列中有没有未发完的消息。
         bool write_in_progress = !write_msgs_.empty();
         //向队列末端添加一个待发送的消息，实际的发送顺序服从于发起deliver的先后顺序。
         write_msgs_.push_back(msg);
         if (!write_in_progress) {
+            cout << "writing" << endl;
+            print(msg);
             boost::asio::async_write(socket_,
                                      boost::asio::buffer(write_msgs_.front().data(),
                                                          write_msgs_.front().length()),
