@@ -149,7 +149,7 @@ private:
     int receive_id;
     int source_id;
     int dest_id;
-    int msg_type_;  // ord=0 rreq=1 rrep=2 rerr=3
+    int msg_type_;  // ord=0 aodv=1
     size_t body_length_;
 };
 

@@ -14,6 +14,7 @@
 #include <unordered_map>
 #include <deque>
 #include <ctime>
+
 #define  MAX  10
 
 #include "message.h"
@@ -43,7 +44,7 @@ public:
         session_map[id] = participant;
 
         static int i = 0;
-        if(i>=0) {
+        if (i >= 0) {
             node[i] = id;
             i++;
         }           //每进来一个ID号就作为邻接矩阵的顶点
@@ -51,58 +52,50 @@ public:
 
     void Create_MatrixUDG()    //创建网络拓扑图
     {
-        for(int column = 0 ; column < MAX;column++)
-        {
-            for(int low = 0; low < MAX;low++)
-            {
-                matrix[column][low]=0;
+        for (int column = 0; column < MAX; column++) {
+            for (int low = 0; low < MAX; low++) {
+                matrix[column][low] = 0;
             }
         }
 
-        srand((unsigned)time(NULL));
-        for(int column = 0 ; column < MAX;column++)
-        {
-            for(int low = 0; low < MAX;low++)
-            {
-                if(rand() % MAX > int(MAX/2) && column!=low)
-                {
+        srand((unsigned) time(NULL));
+        for (int column = 0; column < MAX; column++) {
+            for (int low = 0; low < MAX; low++) {
+                if (rand() % MAX > int(MAX / 2) && column != low) {
                     matrix[column][low] = 1;
                     matrix[low][column] = 1;
                 }
             }
         }
     }
+
     void print_UDG()   //打印图
     {
-        cout<<"The node network topology is as follows: "<<endl;
-        for(int i = 0;i<MAX;i++)
-        {
-            for (int j = 0; j < MAX; j++)
-            {
+        cout << "The node network topology is as follows: " << endl;
+        for (int i = 0; i < MAX; i++) {
+            for (int j = 0; j < MAX; j++) {
                 cout << matrix[i][j] << " ";
 
             }
             cout << endl;
         }
     }
+
     void leave(int id) {
         session_map.erase(id);
     }
 
     bool judge_deliver(const ad_hoc_message &msg)   //判断是否转发消息
     {
-        for(int k = 0;k<MAX;k++)
-        {
-            if(node[k]==msg.receiveid())       //msg.receiveid()是要消息要发送到的ID号
+        for (int k = 0; k < MAX; k++) {
+            if (node[k] == msg.receiveid())       //msg.receiveid()是要消息要发送到的ID号
             {
                 int row = k;
-                for(int j = 0;j<MAX;j++)
-                {
-                    if(node[j] == msg.sendid())      //msg.sendid()是要发送方的ID号
+                for (int j = 0; j < MAX; j++) {
+                    if (node[j] == msg.sendid())      //msg.sendid()是要发送方的ID号
                     {
                         int column = j;
-                        if(matrix[column][row] == 1)
-                        {
+                        if (matrix[column][row] == 1) {
                             return true;
                         }
 
@@ -113,6 +106,7 @@ public:
         }
         return false;
     }
+
     /**
         * scope转发消息函数
         *
@@ -122,21 +116,22 @@ public:
         * @return
         */
     bool deliver(const ad_hoc_message &msg) {
-        if (session_map.find(msg.receiveid()) == session_map.end()) { //没有查到相应的ID，就返回错误
+        if (msg.receiveid() == AODV_BROADCAST_ADDRESS) {
+            //一跳范围内广播
+
+        } else if (session_map.find(msg.receiveid()) == session_map.end()) { //没有查到相应的ID，就返回错误
             return false;
-        }
-        else
-        {
-            if(judge_deliver(msg))       //根据网络拓扑图判断是否能转发信息
+        } else {
+            if (judge_deliver(msg))       //根据网络拓扑图判断是否能转发信息
 //            if(true)
             {
                 session_map[msg.receiveid()]->deliver(msg);    //调用ID号对应的session去发送信息
-                cout<<"[debug] sender: "<<msg.sendid()<<", receiver: "<<msg.receiveid()<<", orig: "<<msg.sourceid()<<", dst: "<<msg.destid()<<endl;
+                cout << "[debug] sender: " << msg.sendid() << ", receiver: " << msg.receiveid() << ", orig: "
+                     << msg.sourceid() << ", dst: " << msg.destid() << endl;
                 return true;
-            }
-            else
-            {
-                cout<<"[error] sender: "<<msg.sendid()<<", receiver: "<<msg.receiveid()<<" not directly connected."<<endl;
+            } else {
+                cout << "[error] sender: " << msg.sendid() << ", receiver: " << msg.receiveid()
+                     << " not directly connected." << endl;
                 reply_error(msg);
                 return false;
             }
@@ -145,7 +140,7 @@ public:
         return false;
     }
 
-    void reply_error(const ad_hoc_message &msg){
+    void reply_error(const ad_hoc_message &msg) {
         ad_hoc_message err(msg);
         err.msg_type(3);
         err.sendid(msg.receiveid());
@@ -163,7 +158,6 @@ private:
 
 
 //对于server端的socket连接，每个对象对应一个socket连接
-
 class ad_hoc_session : public boost::enable_shared_from_this<ad_hoc_session>,
                        public ad_hoc_participant {
 public:
@@ -181,6 +175,7 @@ public:
     tcp::socket &socket() {
         return socket_;
     }
+
     /**
      * 启动session接收消息的循环
      */
@@ -189,7 +184,7 @@ public:
         scope.join(id(), shared_from_this());
         //发起异步的读数据操作，这个读数据操作只负责读取头部，参数：
         //1.socket。和client的连接socket，从该socket的接收缓冲区中读字节数据。
-        //2.path_discovery_timers。创建一个地址是read_msg_的数据的起始位置，长度是ADHOCMESSAGE_HEADER_LENGTH的buffer。
+        //2.rreq_timer_map。创建一个地址是read_msg_的数据的起始位置，长度是ADHOCMESSAGE_HEADER_LENGTH的buffer。
         //      当async_read读满了这个buffer（读到了ADHOCMESSAGE_HEADER_LENGTH个字节），则本次读数据完成，会调用回调函数handle_read_header。
         //3.回调函数。通过bind方法绑定了一个参数：this指针，后两个参数是占位符。
         boost::asio::async_read(socket_,
@@ -200,6 +195,7 @@ public:
                                         boost::asio::placeholders::error,
                                         boost::asio::placeholders::bytes_transferred));
     }
+
     /**
         * 读消息头部的回调函数
         *
@@ -222,6 +218,7 @@ public:
                                             boost::asio::placeholders::error));
         }
     }
+
     /**
         * 读取消息中的数据载荷的回调函数
         *
@@ -235,7 +232,6 @@ public:
             cout << "[" << id() << "->" << read_msg_.receiveid() << "] " << body << endl;
             //由scope去查询该message里的目的ID，进行消息转发。
             scope.deliver(read_msg_);
-
             //发起下一次异步的读操作，等待读取的对象为下一个数据包的首部。
             read_msg_ = ad_hoc_message();
             boost::asio::async_read(socket_,
@@ -247,6 +243,7 @@ public:
                                             boost::asio::placeholders::bytes_transferred));
         }
     }
+
     /**
         * 发送数据成功后的回调函数
         *
@@ -277,6 +274,7 @@ public:
             scope.leave(id());
         }
     }
+
     /**
        * session主动发送数据的函数。
        *
