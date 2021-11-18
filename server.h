@@ -27,13 +27,15 @@ using namespace std;
 typedef deque<ad_hoc_message> message_queue;
 
 void print(ad_hoc_message &msg) {
-    cout << "[message] src: " << msg.sourceid() << ", dst: " << msg.destid() << ", sender: " << msg.sendid()
-         << ", receiver: " << msg.receiveid() << ", type: " << msg.msg_type() << endl;
     if (msg.msg_type() == ORDINARY_MESSAGE) {
+        cout << "[message] src: " << msg.sourceid() << ", dst: " << msg.destid() << ", sender: " << msg.sendid()
+             << ", receiver: " << msg.receiveid() << ", type: " << msg.msg_type() << endl;
         cout.write(msg.body(), msg.body_length());
         cout << endl;
     } else {
-        print_aodv(msg.body());
+//        cout << "[message] src: " << msg.sourceid() << ", dst: " << msg.destid() << ", sender: " << msg.sendid()
+//             << ", receiver: " << msg.receiveid() << ", type: " << msg.msg_type() << endl;
+//        print_aodv(msg.body());
     }
     cout << endl;
 }
@@ -137,7 +139,7 @@ public:
         } else {
             if (judge_deliver(msg))       //根据网络拓扑图判断是否能转发信息
             {
-                cout << "sending" << endl;
+//                cout << "sending" << endl;
                 print(msg);
                 session_map[msg.receiveid()]->deliver(msg);    //调用ID号对应的session去发送信息
                 return true;
@@ -265,7 +267,7 @@ public:
         */
     void handle_read_body(const boost::system::error_code &error) {
         if (!error) {
-            cout << "received" << endl;
+//            cout << "received" << endl;
             print(read_msg_);
             //由scope去查询该message里的目的ID，进行消息转发。
             scope.deliver(read_msg_);

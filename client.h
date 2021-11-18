@@ -23,14 +23,16 @@ typedef deque<ad_hoc_message> ad_hoc_message_queue;
 const int AODV_HELLO_INTERVAL = 30;
 
 void print(ad_hoc_message &msg) {
-    cout << "[message] src: " << msg.sourceid() << ", dst: " << msg.destid() << ", sender: " << msg.sendid()
-         << ", receiver: " << msg.receiveid() << ", type: " << msg.msg_type() << endl;
     if (msg.msg_type() == ORDINARY_MESSAGE) {
+        cout << "[message] src: " << msg.sourceid() << ", dst: " << msg.destid() << ", sender: " << msg.sendid()
+             << ", receiver: " << msg.receiveid() << ", type: " << msg.msg_type() << endl;
         cout << "[user_message] ";
         cout.write(msg.body(), msg.body_length());
         cout << endl;
     } else {
-        print_aodv(msg.body());
+//        cout << "[message] src: " << msg.sourceid() << ", dst: " << msg.destid() << ", sender: " << msg.sendid()
+//             << ", receiver: " << msg.receiveid() << ", type: " << msg.msg_type() << endl;
+//        print_aodv(msg.body());
     }
     cout << endl;
 }
@@ -136,7 +138,7 @@ private:
         */
     void handle_read_body(const boost::system::error_code &error) {
         if (!error) {
-            cout << "received" << endl;
+//            cout << "received" << endl;
             print(read_msg_);
             if (read_msg_.msg_type() == AODV_MESSAGE) {
                 handle_adov_message();
@@ -162,11 +164,11 @@ private:
     void handle_write(const boost::system::error_code &error) {
         if (!error) {
             auto msg = write_msgs_.front();
-            cout << "sent" << endl;
-            print_message(msg);
+//            cout << "sent" << endl;
+//            print_message(msg);
             if (msg.msg_type() == ORDINARY_MESSAGE) {
-                cout.write(msg.body(), msg.body_length());
-                cout << endl;
+//                cout.write(msg.body(), msg.body_length());
+//                cout << endl;
             } else {
                 print_aodv(msg.body());
             }
