@@ -15,7 +15,7 @@
 #include <deque>
 #include <ctime>
 
-#define  MAX  10
+#define  MAX  8
 
 #include "message.h"
 #include "aodv.h"
@@ -64,19 +64,20 @@ public:
 
     void Create_MatrixUDG()    //创建网络拓扑图
     {
-        for (int column = 0; column < MAX; column++) {
-            for (int low = 0; low < MAX; low++) {
-                matrix[column][low] = 0;
-            }
-        }
-        for (int column = 0; column < MAX; column++) {
-            for (int low = 0; low < MAX; low++) {
-                if (rand() % MAX > (MAX * 1.0 / 1.3f) || column == low) {
-                    matrix[column][low] = 1;
-                    matrix[low][column] = 1;
-                }
-            }
-        }
+//        srand(3);
+//        for (int column = 0; column < MAX; column++) {
+//            for (int low = 0; low < MAX; low++) {
+//                matrix[column][low] = 0;
+//            }
+//        }
+//        for (int column = 0; column < MAX; column++) {
+//            for (int low = 0; low < MAX; low++) {
+//                if (rand() % MAX > (MAX * 1.0 / 1.3f) || column == low) {
+//                    matrix[column][low] = 1;
+//                    matrix[low][column] = 1;
+//                }
+//            }
+//        }
     }
 
     void print_UDG()   //打印图
@@ -180,7 +181,16 @@ public:
 private:
     unordered_map<int, ad_hoc_participant_ptr> session_map;
     int node[MAX];
-    int matrix[MAX][MAX];
+    int matrix[MAX][MAX] = {
+            {1, 0, 1, 0, 1, 0, 0, 1},
+            {0, 1, 0, 0, 1, 0, 0, 1},
+            {1, 0, 1, 1, 0, 0, 0, 0},
+            {0, 0, 1, 1, 1, 0, 0, 0},
+            {1, 1, 0, 1, 1, 0, 0, 0},
+            {0, 0, 0, 0, 0, 1, 0, 1},
+            {0, 0, 0, 0, 0, 0, 1, 1},
+            {1, 1, 0, 0, 0, 1, 1, 1}
+    };
 };
 
 
