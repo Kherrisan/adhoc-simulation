@@ -101,12 +101,12 @@ public:
     }
 
     void print() {
-        cout << "routing table: " << endl;
-        for (auto route: routes) {
-            cout << route.first << ": " << route.second.next_hop << ", " << route.second.seq << ", "
-                 << route.second.hops << endl;
-        }
-        cout << endl;
+//        cout << "routing table: " << endl;
+//        for (auto route: routes) {
+//            cout << route.first << ": " << route.second.next_hop << ", " << route.second.seq << ", "
+//                 << route.second.hops << endl;
+//        }
+//        cout << endl;
     }
 
 private:

@@ -166,13 +166,13 @@ private:
             auto msg = write_msgs_.front();
 //            cout << "sent" << endl;
 //            print_message(msg);
-            if (msg.msg_type() == ORDINARY_MESSAGE) {
+//            if (msg.msg_type() == ORDINARY_MESSAGE) {
 //                cout.write(msg.body(), msg.body_length());
 //                cout << endl;
-            } else {
-                print_aodv(msg.body());
-            }
-            cout << endl;
+//            } else {
+//                print_aodv(msg.body());
+//            }
+//            cout << endl;
             write_msgs_.pop_front();
             if (!write_msgs_.empty()) {
                 boost::asio::async_write(socket,

@@ -131,8 +131,8 @@ public:
     bool deliver(ad_hoc_message &msg) {
         if (msg.receiveid() == AODV_BROADCAST_ADDRESS) {
             //一跳范围内广播
-            cout << "broadcasting" << endl;
-            print(msg);
+//            cout << "broadcasting" << endl;
+//            print(msg);
             broadcast(msg);
         } else if (session_map.find(msg.receiveid()) == session_map.end()) { //没有查到相应的ID，就返回错误
             return false;
@@ -140,7 +140,7 @@ public:
             if (judge_deliver(msg))       //根据网络拓扑图判断是否能转发信息
             {
 //                cout << "sending" << endl;
-                print(msg);
+//                print(msg);
                 session_map[msg.receiveid()]->deliver(msg);    //调用ID号对应的session去发送信息
                 return true;
             } else {

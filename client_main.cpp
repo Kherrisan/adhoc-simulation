@@ -26,6 +26,7 @@ int main(int argc, char **argv) {
         cin >> remotePort >> line;
         msg.destid(remotePort);
         msg.sourceid(localPort);
+        msg.receiveid(remotePort);
         msg.body_length(line.size());
         msg.msg_type(ORDINARY_MESSAGE);
         memcpy(msg.body(), line.c_str(), msg.body_length());
