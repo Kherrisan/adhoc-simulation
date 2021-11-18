@@ -29,12 +29,13 @@ void print(ad_hoc_message &msg) {
         cout << "[user_message] ";
         cout.write(msg.body(), msg.body_length());
         cout << endl;
+        cout << endl;
     } else {
 //        cout << "[message] src: " << msg.sourceid() << ", dst: " << msg.destid() << ", sender: " << msg.sendid()
 //             << ", receiver: " << msg.receiveid() << ", type: " << msg.msg_type() << endl;
 //        print_aodv(msg.body());
     }
-    cout << endl;
+//    cout << endl;
 }
 
 class ad_hoc_client {

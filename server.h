@@ -32,12 +32,12 @@ void print(ad_hoc_message &msg) {
              << ", receiver: " << msg.receiveid() << ", type: " << msg.msg_type() << endl;
         cout.write(msg.body(), msg.body_length());
         cout << endl;
+        cout << endl;
     } else {
 //        cout << "[message] src: " << msg.sourceid() << ", dst: " << msg.destid() << ", sender: " << msg.sendid()
 //             << ", receiver: " << msg.receiveid() << ", type: " << msg.msg_type() << endl;
 //        print_aodv(msg.body());
     }
-    cout << endl;
 }
 
 class ad_hoc_participant {
@@ -184,14 +184,14 @@ private:
     unordered_map<int, ad_hoc_participant_ptr> session_map;
     int node[MAX];
     int matrix[MAX][MAX] = {
-            {1, 0, 1, 0, 1, 0, 0, 1},
-            {0, 1, 0, 0, 1, 0, 0, 1},
-            {1, 0, 1, 1, 0, 0, 0, 0},
-            {0, 0, 1, 1, 1, 0, 0, 0},
-            {1, 1, 0, 1, 1, 0, 0, 0},
-            {0, 0, 0, 0, 0, 1, 0, 1},
-            {0, 0, 0, 0, 0, 0, 1, 1},
-            {1, 1, 0, 0, 0, 1, 1, 1}
+            {1, 1, 0, 1, 0, 1, 0, 1},
+            {1, 1, 1, 0, 1, 0, 0, 0},
+            {0, 1, 1, 0, 1, 1, 1, 1},
+            {1, 0, 0, 1, 0, 0, 0, 0},
+            {0, 1, 1, 0, 1, 1, 0, 0},
+            {1, 0, 1, 0, 1, 1, 1, 0},
+            {0, 0, 1, 0, 0, 1, 1, 1},
+            {1, 0, 1, 0, 0, 0, 1, 1}
     };
 };
 
