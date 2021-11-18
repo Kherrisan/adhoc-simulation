@@ -26,7 +26,7 @@ void print(ad_hoc_message &msg) {
     cout << "[message] src: " << msg.sourceid() << ", dst: " << msg.destid() << ", sender: " << msg.sendid()
          << ", receiver: " << msg.receiveid() << ", type: " << msg.msg_type() << endl;
     if (msg.msg_type() == ORDINARY_MESSAGE) {
-        cout<<"[user_message] ";
+        cout << "[user_message] ";
         cout.write(msg.body(), msg.body_length());
         cout << endl;
     } else {
@@ -48,11 +48,16 @@ public:
     * @param io_context 接收数据的IO事件循环
     */
 
-    ad_hoc_client(tcp::endpoint &endpoint, boost::asio::io_context &io_context)
+    ad_hoc_client(tcp::endpoint &endpoint, boost::asio::io_context &io_context, int id)
             : socket(io_context),
               io_context(io_context),
               hello_timer(io_context, boost::posix_time::seconds(AODV_HELLO_INTERVAL)) {
         //第一个参数指向某个IP主机的IP端口，第二个是偏函数对象，实际代码地址指向成员函数handle_connect
+        socket.open(boost::asio::ip::tcp::v4());
+        socket.bind(tcp::endpoint(
+                boost::asio::ip::address::from_string("127.0.0.1"),
+                id
+        ));
         socket.async_connect(endpoint,
                              boost::bind(
                                      &ad_hoc_client::handle_connect,
