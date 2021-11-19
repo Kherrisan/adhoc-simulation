@@ -11,6 +11,9 @@
 #include <set>
 #include "boost/functional/hash.hpp"
 #include "boost/asio.hpp"
+#include <memory>
+
+typedef shared_ptr<boost::asio::deadline_timer> timer_ptr;
 
 using boost::asio::ip::tcp;
 using namespace std;
@@ -125,27 +128,24 @@ public:
         return rreq_timer_map.find(rreq) != rreq_timer_map.end();
     }
 
-    void discard(int src, int id) {
+    void remove(int src, int id) {
         ad_hoc_aodv_rreq rreq{};
         rreq.orig = src;
         rreq.id = id;
-        auto timer = rreq_timer_map[rreq];
-        delete timer;
         rreq_timer_map.erase(rreq);
     }
 
-    boost::asio::deadline_timer *setup_path_discovery_timer(boost::asio::io_context &io_context, int src, int id) {
+    timer_ptr new_timer(boost::asio::io_context &io_context, int src, int id) {
         ad_hoc_aodv_rreq rreq{};
         rreq.orig = src;
         rreq.id = id;
-        auto timer = new boost::asio::deadline_timer(io_context,
-                                                     boost::posix_time::seconds(AODV_PATH_DISCOVERY_TIMEOUT));
-        rreq_timer_map[rreq] = timer;
-        return timer;
+        rreq_timer_map[rreq] = make_shared<boost::asio::deadline_timer>(io_context, boost::posix_time::seconds(
+                AODV_PATH_DISCOVERY_TIMEOUT));
+        return rreq_timer_map[rreq]
     }
 
 private:
-    unordered_map<ad_hoc_aodv_rreq, boost::asio::deadline_timer *> rreq_timer_map;
+    unordered_map<ad_hoc_aodv_rreq, timer_ptr> rreq_timer_map;
 };
 
 class ad_hoc_aodv_neighbor_list {
@@ -154,24 +154,24 @@ public:
         return neighbor_timer_map.find(neighbor) != neighbor_timer_map.end();
     }
 
-    void discard(int neighbor) {
+    void remove(int neighbor) {
         auto timer = neighbor_timer_map[neighbor];
         timer->cancel();
-        delete timer;
         neighbor_timer_map.erase(neighbor);
     }
 
-    boost::asio::deadline_timer *timer(int neighbor) {
+    timer_ptr timer(int neighbor) {
         return neighbor_timer_map[neighbor];
     }
 
-    boost::asio::deadline_timer *setup_neighbor_timer(boost::asio::io_context &io_context, int neighbor) {
-        auto timer = new boost::asio::deadline_timer(io_context, boost::posix_time::seconds(AODV_HELLO_TIMEOUT));
-        neighbor_timer_map[neighbor] = timer;
-        return timer;
+    timer_ptr new_timer(boost::asio::io_context &io_context, int neighbor) {
+        neighbor_timer_map[neighbor] = make_shared<boost::asio::deadline_timer>(io_context, boost::posix_time::seconds(
+                AODV_HELLO_TIMEOUT));
+        return neighbor_timer_map[neighbor];
     }
 
-    unordered_map<int, boost::asio::deadline_timer *> neighbor_timer_map;
+private:
+    unordered_map<int, timer_ptr> neighbor_timer_map;
 };
 
 void print_aodv(const char *data) {

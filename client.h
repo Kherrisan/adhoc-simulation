@@ -293,7 +293,7 @@ private:
         if (rreq_buffer.contains(rreq.orig, rreq.id)) {
             return;
         } else {
-            auto timer = this->rreq_buffer.setup_path_discovery_timer(io_context, rreq.orig, rreq.id);
+            auto timer = this->rreq_buffer.new_timer(io_context, rreq.orig, rreq.id);
 //            timer->async_wait(boost::bind(&ad_hoc_client::aodv_path_discovery_timeout, this, rreq.orig, rreq.id));
         }
 
@@ -377,14 +377,14 @@ private:
         int neighbor = msg.sendid();
         if (this->neighbors.contains(neighbor)) {
             auto timer = neighbors.timer(neighbor);
-            neighbors.discard(neighbor);
-            timer = neighbors.setup_neighbor_timer(io_context, neighbor);
+            neighbors.remove(neighbor);
+            timer = neighbors.new_timer(io_context, neighbor);
 //            timer->async_wait(boost::bind(&ad_hoc_client::aodv_neighbor_timeout, this, neighbor));
 
             auto route = routing_table_.route(neighbor);
             aodv_restart_route_timer(route);
         } else {
-            auto timer = neighbors.setup_neighbor_timer(io_context, neighbor);
+            auto timer = neighbors.new_timer(io_context, neighbor);
 //            timer->async_wait(boost::bind(&ad_hoc_client::aodv_neighbor_timeout, this, neighbor));
 
             if (routing_table_.contains(neighbor)) {
@@ -431,7 +431,7 @@ private:
         msg.body_length(sizeof(rreq));
         memcpy(msg.body(), &rreq, msg.body_length());
         write(msg);
-        auto timer = rreq_buffer.setup_path_discovery_timer(io_context, id(), rreq.id);
+        auto timer = rreq_buffer.new_timer(io_context, id(), rreq.id);
 //        timer->async_wait(boost::bind(&ad_hoc_client::aodv_path_discovery_timeout, this, id(), rreq.id));
     }
 
@@ -482,7 +482,7 @@ private:
 
     void aodv_path_discovery_timeout(int node, int rreq_id) {
         if (rreq_buffer.contains(node, rreq_id)) {
-            rreq_buffer.discard(node, rreq_id);
+            rreq_buffer.remove(node, rreq_id);
         }
     }
 
@@ -493,7 +493,7 @@ private:
     void aodv_neighbor_timeout(int neighbor) {
         auto dest_seq = routing_table_.route(neighbor).seq;
         routing_table_.erase(neighbor);
-        neighbors.discard(neighbor);
+        neighbors.remove(neighbor);
         send_rerr(neighbor, dest_seq);
         send_rreq(neighbor, dest_seq + 1);
     }
