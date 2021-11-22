@@ -5,8 +5,11 @@
 #ifndef ADHOC_SIMULATION_CLIENT_H
 #define ADHOC_SIMULATION_CLIENT_H
 
+#define DEBUG true
+
 #include <string>
 #include <deque>
+#include <ctime>
 #include <boost/bind/bind.hpp>
 #include <boost/shared_ptr.hpp>
 #include <boost/asio.hpp>
@@ -20,9 +23,19 @@ using namespace std;
 
 typedef deque<ad_hoc_message> ad_hoc_message_queue;
 
-const int AODV_HELLO_INTERVAL = 30;
+const int AODV_HELLO_INTERVAL = 10;
+const int AODV_ACTIVE_ROUTE_TIMEOUT = 300;
+
+void print_time() {
+    time_t now = time(0);
+    tm *ltm = localtime(&now);
+    char loc_date[20];
+    sprintf(loc_date, "%d:%02d:%02d", ltm->tm_hour, ltm->tm_min, ltm->tm_sec);
+    cout << loc_date << endl;
+}
 
 void print(ad_hoc_message &msg) {
+    print_time();
     if (msg.msg_type() == ORDINARY_MESSAGE) {
         cout << "[message] src: " << msg.sourceid() << ", dst: " << msg.destid() << ", sender: " << msg.sendid()
              << ", receiver: " << msg.receiveid() << ", type: " << msg.msg_type() << endl;
@@ -31,11 +44,13 @@ void print(ad_hoc_message &msg) {
         cout << endl;
         cout << endl;
     } else {
-//        cout << "[message] src: " << msg.sourceid() << ", dst: " << msg.destid() << ", sender: " << msg.sendid()
-//             << ", receiver: " << msg.receiveid() << ", type: " << msg.msg_type() << endl;
-//        print_aodv(msg.body());
+#if DEBUG
+        cout << "[message] src: " << msg.sourceid() << ", dst: " << msg.destid() << ", sender: " << msg.sendid()
+             << ", receiver: " << msg.receiveid() << ", type: " << msg.msg_type() << endl;
+        print_aodv(msg.body());
+        cout << endl;
+#endif
     }
-//    cout << endl;
 }
 
 class ad_hoc_client {
@@ -108,6 +123,7 @@ private:
                                     boost::asio::buffer(read_msg_.data(), ADHOCMESSAGE_HEADER_LENGTH),
                                     boost::bind(&ad_hoc_client::handle_read_header, this,
                                                 boost::asio::placeholders::error));
+            send_hello();
         } else {
             cerr << error << endl;
         }
@@ -139,7 +155,9 @@ private:
         */
     void handle_read_body(const boost::system::error_code &error) {
         if (!error) {
-//            cout << "received" << endl;
+#if DEBUG
+            cout << "received" << endl;
+#endif
             print(read_msg_);
             if (read_msg_.msg_type() == AODV_MESSAGE) {
                 handle_adov_message();
@@ -165,15 +183,17 @@ private:
     void handle_write(const boost::system::error_code &error) {
         if (!error) {
             auto msg = write_msgs_.front();
-//            cout << "sent" << endl;
-//            print_message(msg);
-//            if (msg.msg_type() == ORDINARY_MESSAGE) {
-//                cout.write(msg.body(), msg.body_length());
-//                cout << endl;
-//            } else {
-//                print_aodv(msg.body());
-//            }
-//            cout << endl;
+#if DEBUG
+            cout << "sent" << endl;
+            print_message(msg);
+            if (msg.msg_type() == ORDINARY_MESSAGE) {
+                cout.write(msg.body(), msg.body_length());
+                cout << endl;
+            } else {
+                print_aodv(msg.body());
+            }
+            cout << endl;
+#endif
             write_msgs_.pop_front();
             if (!write_msgs_.empty()) {
                 boost::asio::async_write(socket,
@@ -199,6 +219,7 @@ private:
         if (routing_table_.contains(msg.destid()) || msg.receiveid() == AODV_BROADCAST_ADDRESS) {
             if (routing_table_.contains(msg.destid())) {
                 auto route = routing_table_.route(msg.destid());
+                //重新启动该路由表项的定时器
                 aodv_restart_route_timer(route);
                 msg.receiveid(route.next_hop);
             }
@@ -222,8 +243,10 @@ private:
 
     void handle_user_message(ad_hoc_message msg) {
         if (id() == msg.destid()) {
-//            cout.write(read_msg_.body(), read_msg_.body_length());
-//            cout << endl;
+#if DEBUG
+            cout.write(read_msg_.body(), read_msg_.body_length());
+            cout << endl;
+#endif
         } else {
             //转发消息给下一跳
             auto route = routing_table_.route(msg.destid());
@@ -251,9 +274,13 @@ private:
         }
     }
 
-    void aodv_restart_route_timer(ad_hoc_client_routing_table_item item) {
-        boost::asio::deadline_timer timer(io_context, boost::posix_time::seconds(10000000));
-//        timer.async_wait(boost::bind(&ad_hoc_client::aodv_route_timeout, this, item));
+    void aodv_restart_route_timer(ad_hoc_client_routing_table_item &item) {
+        if (item.timer == nullptr) {
+            item.timer = make_shared<boost::asio::deadline_timer>(io_context);
+        }
+        item.timer->expires_from_now(boost::posix_time::seconds(AODV_ACTIVE_ROUTE_TIMEOUT));
+        item.timer->async_wait(
+                boost::bind(&ad_hoc_client::aodv_route_timeout, this, item, boost::asio::placeholders::error));
     }
 
     /**
@@ -284,7 +311,10 @@ private:
                 aodv_restart_route_timer(orig_route);
             }
         } else {
-            ad_hoc_client_routing_table_item route{rreq.orig, msg.sendid(), rreq.orig_seq, hops};
+            ad_hoc_client_routing_table_item route{rreq.orig, msg.sendid(), rreq.orig_seq, hops,
+                                                   make_shared<boost::asio::deadline_timer>(io_context,
+                                                                                            boost::posix_time::seconds(
+                                                                                                    AODV_ACTIVE_ROUTE_TIMEOUT))};
             routing_table_.insert(route);
             aodv_restart_route_timer(route);
         }
@@ -294,7 +324,7 @@ private:
             return;
         } else {
             auto timer = this->rreq_buffer.new_timer(io_context, rreq.orig, rreq.id);
-//            timer->async_wait(boost::bind(&ad_hoc_client::aodv_path_discovery_timeout, this, rreq.orig, rreq.id));
+            timer->async_wait(boost::bind(&ad_hoc_client::aodv_path_discovery_timeout, this, rreq.orig, rreq.id));
         }
 
         //到达目的节点，返回rrep
@@ -329,7 +359,10 @@ private:
                     aodv_restart_route_timer(routing_table_.route(rrep.dest));
                 }
             } else {
-                ad_hoc_client_routing_table_item route{rrep.dest, msg.sendid(), rrep.dest_seq, hops};
+                ad_hoc_client_routing_table_item route{rrep.dest, msg.sendid(), rrep.dest_seq, hops,
+                                                       make_shared<boost::asio::deadline_timer>(io_context,
+                                                                                                boost::posix_time::seconds(
+                                                                                                        AODV_ACTIVE_ROUTE_TIMEOUT))};
                 routing_table_.insert(route);
                 aodv_restart_route_timer(route);
             }
@@ -349,7 +382,10 @@ private:
                 dest_route.seq = rrep.dest_seq;
                 aodv_restart_route_timer(dest_route);
             } else {
-                ad_hoc_client_routing_table_item route{rrep.dest, msg.sendid(), rrep.dest_seq, hops};
+                ad_hoc_client_routing_table_item route{rrep.dest, msg.sendid(), rrep.dest_seq, hops,
+                                                       make_shared<boost::asio::deadline_timer>(io_context,
+                                                                                                boost::posix_time::seconds(
+                                                                                                        AODV_ACTIVE_ROUTE_TIMEOUT))};
                 routing_table_.insert(route);
                 aodv_restart_route_timer(routing_table_.route(rrep.dest));
             }
@@ -367,7 +403,7 @@ private:
         if (routing_table_.contains(rerr.dest)) {
             auto dest_route = routing_table_.route(rerr.dest);
             if (dest_route.next_hop == msg.sendid()) {
-                routing_table_.erase(rerr.dest);
+                routing_table_.remove(rerr.dest);
                 forward_rerr(msg);
             }
         }
@@ -375,23 +411,30 @@ private:
 
     void handle_hello(ad_hoc_message &msg) {
         int neighbor = msg.sendid();
+        neighbors.print();
         if (this->neighbors.contains(neighbor)) {
             auto timer = neighbors.timer(neighbor);
-            neighbors.remove(neighbor);
-            timer = neighbors.new_timer(io_context, neighbor);
-//            timer->async_wait(boost::bind(&ad_hoc_client::aodv_neighbor_timeout, this, neighbor));
+            timer->expires_from_now(boost::posix_time::seconds(AODV_HELLO_TIMEOUT));
+            timer->async_wait(boost::bind(&ad_hoc_client::aodv_neighbor_timeout, this, neighbor,
+                                          boost::asio::placeholders::error));
 
             auto route = routing_table_.route(neighbor);
             aodv_restart_route_timer(route);
         } else {
-            auto timer = neighbors.new_timer(io_context, neighbor);
-//            timer->async_wait(boost::bind(&ad_hoc_client::aodv_neighbor_timeout, this, neighbor));
+            auto timer = this->neighbors.new_timer(io_context, neighbor);
+            timer->expires_from_now(boost::posix_time::seconds(AODV_HELLO_TIMEOUT));
+            timer->async_wait(boost::bind(&ad_hoc_client::aodv_neighbor_timeout, this, neighbor,
+                                          boost::asio::placeholders::error));
 
             if (routing_table_.contains(neighbor)) {
                 auto route = routing_table_.route(neighbor);
                 aodv_restart_route_timer(route);
             } else {
-                ad_hoc_client_routing_table_item route{neighbor, neighbor, 1, 1};
+                ad_hoc_client_routing_table_item route{neighbor, neighbor, 1, 1,
+                                                       make_shared<boost::asio::deadline_timer>(io_context,
+                                                                                                boost::posix_time::seconds(
+                                                                                                        AODV_ACTIVE_ROUTE_TIMEOUT))};
+                routing_table_.insert(route);
                 aodv_restart_route_timer(route);
             }
         }
@@ -431,8 +474,9 @@ private:
         msg.body_length(sizeof(rreq));
         memcpy(msg.body(), &rreq, msg.body_length());
         write(msg);
+        //启动一个定时器，记录rreq在缓存中的存活时间，在存活时间之内的相同source和id的rreq都会被丢弃
         auto timer = rreq_buffer.new_timer(io_context, id(), rreq.id);
-//        timer->async_wait(boost::bind(&ad_hoc_client::aodv_path_discovery_timeout, this, id(), rreq.id));
+        timer->async_wait(boost::bind(&ad_hoc_client::aodv_path_discovery_timeout, this, id(), rreq.id));
     }
 
     void send_rrep(int orig, int dest, int dest_seq, int hops, int next_hop) {
@@ -458,6 +502,7 @@ private:
         msg.destid(AODV_BROADCAST_ADDRESS);
         ad_hoc_aodv_rerr rerr{AODV_RERR, dest, dest_seq};
         msg.body_length(sizeof(rerr));
+        msg.msg_type(AODV_MESSAGE);
         memcpy(msg.body(), &rerr, msg.body_length());
         msg.encode_header();
         write(msg);
@@ -471,13 +516,13 @@ private:
         msg.destid(AODV_BROADCAST_ADDRESS);
         ad_hoc_aodv_hello hello{AODV_HELLO};
         msg.body_length(sizeof(hello));
+        msg.msg_type(AODV_MESSAGE);
         memcpy(msg.body(), &hello, msg.body_length());
         msg.encode_header();
         write(msg);
 
-        hello_timer.cancel();
         hello_timer.expires_from_now(boost::posix_time::seconds(AODV_HELLO_INTERVAL));
-//        hello_timer.async_wait(boost::bind(&ad_hoc_client::send_hello, this));
+        hello_timer.async_wait(boost::bind(&ad_hoc_client::send_hello, this));
     }
 
     void aodv_path_discovery_timeout(int node, int rreq_id) {
@@ -486,13 +531,20 @@ private:
         }
     }
 
-    void aodv_route_timeout(ad_hoc_client_routing_table_item &item) {
-        routing_table_.erase(item.dest);
+    void aodv_route_timeout(ad_hoc_client_routing_table_item &item, const boost::system::error_code &err) {
+        if (err == boost::asio::error::operation_aborted) {
+            return;
+        }
+        routing_table_.remove(item.dest);
     }
 
-    void aodv_neighbor_timeout(int neighbor) {
+    void aodv_neighbor_timeout(int neighbor, const boost::system::error_code &err) {
+        if (err == boost::asio::error::operation_aborted) {
+            return;
+        }
+        cout << "neighbor: " << neighbor << " timeout" << endl;
         auto dest_seq = routing_table_.route(neighbor).seq;
-        routing_table_.erase(neighbor);
+        routing_table_.remove(neighbor);
         neighbors.remove(neighbor);
         send_rerr(neighbor, dest_seq);
         send_rreq(neighbor, dest_seq + 1);

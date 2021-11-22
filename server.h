@@ -5,6 +5,8 @@
 #ifndef ADHOC_SIMULATION_SERVER_H
 #define ADHOC_SIMULATION_SERVER_H
 
+#define DEBUG true
+
 #include <string>
 #include <boost/array.hpp>
 #include <boost/bind/bind.hpp>
@@ -20,13 +22,23 @@
 #include "message.h"
 #include "aodv.h"
 
+const int UDG_UPDATE_TIMEOUT = 30;
 
 using boost::asio::ip::tcp;
 using namespace std;
 //使用deque来实现串型消息队列，主要用于待发送消息队列
 typedef deque<ad_hoc_message> message_queue;
 
+void print_time() {
+    time_t now = time(0);
+    tm *ltm = localtime(&now);
+    char loc_date[20];
+    sprintf(loc_date, "%d:%02d:%02d", ltm->tm_hour, ltm->tm_min, ltm->tm_sec);
+    cout << loc_date << endl;
+}
+
 void print(ad_hoc_message &msg) {
+    print_time();
     if (msg.msg_type() == ORDINARY_MESSAGE) {
         cout << "[message] src: " << msg.sourceid() << ", dst: " << msg.destid() << ", sender: " << msg.sendid()
              << ", receiver: " << msg.receiveid() << ", type: " << msg.msg_type() << endl;
@@ -34,9 +46,11 @@ void print(ad_hoc_message &msg) {
         cout << endl;
         cout << endl;
     } else {
-//        cout << "[message] src: " << msg.sourceid() << ", dst: " << msg.destid() << ", sender: " << msg.sendid()
-//             << ", receiver: " << msg.receiveid() << ", type: " << msg.msg_type() << endl;
-//        print_aodv(msg.body());
+#if DEBUG
+        cout << "[message] src: " << msg.sourceid() << ", dst: " << msg.destid() << ", sender: " << msg.sendid()
+             << ", receiver: " << msg.receiveid() << ", type: " << msg.msg_type() << endl;
+        print_aodv(msg.body());
+#endif
     }
 }
 
@@ -64,26 +78,27 @@ public:
         }           //每进来一个ID号就作为邻接矩阵的顶点
     }
 
-    void Create_MatrixUDG()    //创建网络拓扑图
+    void create_UDG()    //创建网络拓扑图
     {
 //        srand(3);
-//        for (int column = 0; column < MAX; column++) {
-//            for (int low = 0; low < MAX; low++) {
-//                matrix[column][low] = 0;
-//            }
-//        }
-//        for (int column = 0; column < MAX; column++) {
-//            for (int low = 0; low < MAX; low++) {
-//                if (rand() % MAX > (MAX * 1.0 / 1.3f) || column == low) {
-//                    matrix[column][low] = 1;
-//                    matrix[low][column] = 1;
-//                }
-//            }
-//        }
+        for (int column = 0; column < MAX; column++) {
+            for (int low = 0; low < MAX; low++) {
+                matrix[column][low] = 0;
+            }
+        }
+        for (int column = 0; column < MAX; column++) {
+            for (int low = 0; low < MAX; low++) {
+                if (rand() % MAX > int(MAX / 2) || column == low) {
+                    matrix[column][low] = 1;
+                    matrix[low][column] = 1;
+                }
+            }
+        }
     }
 
     void print_UDG()   //打印图
     {
+        print_time();
         cout << "The node network topology is as follows: " << endl;
         for (int i = 0; i < MAX; i++) {
             for (int j = 0; j < MAX; j++) {
@@ -92,6 +107,7 @@ public:
             }
             cout << endl;
         }
+        cout << endl;
     }
 
     void leave(int id) {
@@ -131,16 +147,20 @@ public:
     bool deliver(ad_hoc_message &msg) {
         if (msg.receiveid() == AODV_BROADCAST_ADDRESS) {
             //一跳范围内广播
-//            cout << "broadcasting" << endl;
-//            print(msg);
+#if DEBUG
+            cout << "broadcasting" << endl;
+            print(msg);
+#endif
             broadcast(msg);
         } else if (session_map.find(msg.receiveid()) == session_map.end()) { //没有查到相应的ID，就返回错误
             return false;
         } else {
             if (judge_deliver(msg))       //根据网络拓扑图判断是否能转发信息
             {
-//                cout << "sending" << endl;
-//                print(msg);
+#if DEBUG
+                cout << "sending" << endl;
+                print(msg);
+#endif
                 session_map[msg.receiveid()]->deliver(msg);    //调用ID号对应的session去发送信息
                 return true;
             } else {
@@ -183,16 +203,7 @@ public:
 private:
     unordered_map<int, ad_hoc_participant_ptr> session_map;
     int node[MAX];
-    int matrix[MAX][MAX] = {
-            {1, 1, 0, 0, 0, 1, 0, 1},
-            {1, 1, 1, 0, 1, 0, 0, 0},
-            {0, 1, 1, 0, 1, 1, 1, 1},
-            {0, 0, 0, 1, 0, 0, 0, 0},
-            {0, 1, 1, 0, 1, 1, 0, 0},
-            {1, 0, 1, 0, 1, 1, 1, 0},
-            {0, 0, 1, 0, 0, 1, 1, 1},
-            {1, 0, 1, 0, 0, 0, 1, 1}
-    };
+    int matrix[MAX][MAX];
 };
 
 
@@ -267,7 +278,9 @@ public:
         */
     void handle_read_body(const boost::system::error_code &error) {
         if (!error) {
-//            cout << "received" << endl;
+#if DEBUG
+            cout << "received" << endl;
+#endif
             print(read_msg_);
             //由scope去查询该message里的目的ID，进行消息转发。
             scope.deliver(read_msg_);
@@ -364,9 +377,12 @@ public:
      * @param io_context 负责server收发消息的IO事件循环。当异步函数绑定好回调函数之后，需要运行io_context.run()来启动事件循环。
      */
     ad_hoc_server(const tcp::endpoint &endpoint, boost::asio::io_context &io_context) : acceptor(io_context, endpoint),
-                                                                                        io_context(io_context) {
+                                                                                        io_context(io_context),
+                                                                                        udg_timer(io_context,
+                                                                                                  boost::posix_time::seconds(
+                                                                                                          UDG_UPDATE_TIMEOUT)) {
         cout << "start listening at port " << endpoint.port() << endl;
-        scope.Create_MatrixUDG();
+        scope.create_UDG();
         scope.print_UDG();
         //创建一个空的session对象
         ad_hoc_session_ptr new_session(new ad_hoc_session(io_context, scope));
@@ -381,9 +397,18 @@ public:
                                       new_session,
                                       boost::asio::placeholders::error
                               ));
+        udg_timer.async_wait(boost::bind(&ad_hoc_server::update_udg, this));
     }
 
-private://接受client端主动发起的连接
+private:
+
+    void update_udg() {
+        scope.create_UDG();
+        scope.print_UDG();
+        udg_timer.expires_from_now(boost::posix_time::seconds(UDG_UPDATE_TIMEOUT));
+        udg_timer.async_wait(boost::bind(&ad_hoc_server::update_udg, this));
+    }
+
     /**
     * 新连接建立的回调函数
     *
@@ -412,6 +437,7 @@ private://接受client端主动发起的连接
         }
     }
 
+    boost::asio::deadline_timer udg_timer;
     tcp::acceptor acceptor; //端口监听器，接收新的连接并创建一个对应的socket
     boost::asio::io_context &io_context;
     ad_hoc_scope scope; //scope对象，每个server有一个scope，维护ID->session的映射表
