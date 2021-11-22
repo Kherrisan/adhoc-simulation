@@ -108,8 +108,6 @@ private:
                                     boost::asio::buffer(read_msg_.data(), ADHOCMESSAGE_HEADER_LENGTH),
                                     boost::bind(&ad_hoc_client::handle_read_header, this,
                                                 boost::asio::placeholders::error));
-            hello_timer.async_wait(boost::bind(&ad_hoc_client::send_hello, this));
-
         } else {
             cerr << error << endl;
         }
@@ -169,14 +167,12 @@ private:
             auto msg = write_msgs_.front();
 //            cout << "sent" << endl;
 //            print_message(msg);
-            if (msg.msg_type() == ORDINARY_MESSAGE) {
-                cout << endl;
-                routing_table_.print();
+//            if (msg.msg_type() == ORDINARY_MESSAGE) {
 //                cout.write(msg.body(), msg.body_length());
 //                cout << endl;
-            } else {
+//            } else {
 //                print_aodv(msg.body());
-            }
+//            }
 //            cout << endl;
             write_msgs_.pop_front();
             if (!write_msgs_.empty()) {
@@ -221,16 +217,11 @@ private:
         } else {
             send_rreq(msg.destid(), -1);
             waiting_rreq_msg_queue.push_back(msg);
-
-            auto timer = msg_buffer.setup_timer(io_context, msg.sourceid(), msg.destid());
-            timer->async_wait(
-                    boost::bind(&ad_hoc_client::aodv_not_found_timeout, this, msg, boost::asio::placeholders::error));
         }
     }
 
     void handle_user_message(ad_hoc_message msg) {
         if (id() == msg.destid()) {
-            routing_table_.print();
 //            cout.write(read_msg_.body(), read_msg_.body_length());
 //            cout << endl;
         } else {
@@ -261,10 +252,8 @@ private:
     }
 
     void aodv_restart_route_timer(ad_hoc_client_routing_table_item item) {
-        item.timer->cancel();
-        delete item.timer;
-        item.timer = new boost::asio::deadline_timer(io_context, boost::posix_time::seconds(30));
-        item.timer->async_wait(boost::bind(&ad_hoc_client::aodv_route_timeout, this, item));
+        boost::asio::deadline_timer timer(io_context, boost::posix_time::seconds(10000000));
+//        timer.async_wait(boost::bind(&ad_hoc_client::aodv_route_timeout, this, item));
     }
 
     /**
@@ -299,13 +288,13 @@ private:
             routing_table_.insert(route);
             aodv_restart_route_timer(route);
         }
-//        routing_table_.print();
+        routing_table_.print();
 
         if (rreq_buffer.contains(rreq.orig, rreq.id)) {
             return;
         } else {
-            this->rreq_buffer.setup_timer(io_context, rreq.orig, rreq.id)
-                    ->async_wait(boost::bind(&ad_hoc_client::aodv_path_discovery_timeout, this, rreq.orig, rreq.id));
+            auto timer = this->rreq_buffer.new_timer(io_context, rreq.orig, rreq.id);
+//            timer->async_wait(boost::bind(&ad_hoc_client::aodv_path_discovery_timeout, this, rreq.orig, rreq.id));
         }
 
         //到达目的节点，返回rrep
@@ -348,9 +337,6 @@ private:
             for (auto msg = waiting_rreq_msg_queue.begin(); msg != waiting_rreq_msg_queue.end();) {
                 if (msg->destid() == rrep.dest) {
                     write(*msg);
-                    if (msg_buffer.contains(msg->sourceid(), msg->destid())) {
-                        msg_buffer.discard(msg->sourceid(), msg->destid());
-                    }
                     msg = waiting_rreq_msg_queue.erase(msg);
                 } else {
                     msg++;
@@ -370,7 +356,8 @@ private:
             auto route = routing_table_.route(rrep.orig);
             forward_rrep(msg, route.next_hop);
         }
-//        routing_table_.print();
+
+        routing_table_.print();
     }
 
     void handle_rerr(ad_hoc_message &msg, ad_hoc_aodv_rerr &rerr) {
@@ -380,7 +367,7 @@ private:
         if (routing_table_.contains(rerr.dest)) {
             auto dest_route = routing_table_.route(rerr.dest);
             if (dest_route.next_hop == msg.sendid()) {
-                routing_table_.discard(rerr.dest);
+                routing_table_.erase(rerr.dest);
                 forward_rerr(msg);
             }
         }
@@ -389,14 +376,17 @@ private:
     void handle_hello(ad_hoc_message &msg) {
         int neighbor = msg.sendid();
         if (this->neighbors.contains(neighbor)) {
-            neighbors.discard(neighbor);
-            neighbors.setup_timer(io_context, neighbor)
-                    ->async_wait(boost::bind(&ad_hoc_client::aodv_neighbor_timeout, this, neighbor));
+            auto timer = neighbors.timer(neighbor);
+            neighbors.remove(neighbor);
+            timer = neighbors.new_timer(io_context, neighbor);
+//            timer->async_wait(boost::bind(&ad_hoc_client::aodv_neighbor_timeout, this, neighbor));
+
             auto route = routing_table_.route(neighbor);
             aodv_restart_route_timer(route);
         } else {
-            neighbors.setup_timer(io_context, neighbor)
-                    ->async_wait(boost::bind(&ad_hoc_client::aodv_neighbor_timeout, this, neighbor));
+            auto timer = neighbors.new_timer(io_context, neighbor);
+//            timer->async_wait(boost::bind(&ad_hoc_client::aodv_neighbor_timeout, this, neighbor));
+
             if (routing_table_.contains(neighbor)) {
                 auto route = routing_table_.route(neighbor);
                 aodv_restart_route_timer(route);
@@ -441,8 +431,8 @@ private:
         msg.body_length(sizeof(rreq));
         memcpy(msg.body(), &rreq, msg.body_length());
         write(msg);
-        rreq_buffer.setup_timer(io_context, id(), rreq.id)
-                ->async_wait(boost::bind(&ad_hoc_client::aodv_path_discovery_timeout, this, id(), rreq.id));
+        auto timer = rreq_buffer.new_timer(io_context, id(), rreq.id);
+//        timer->async_wait(boost::bind(&ad_hoc_client::aodv_path_discovery_timeout, this, id(), rreq.id));
     }
 
     void send_rrep(int orig, int dest, int dest_seq, int hops, int next_hop) {
@@ -485,32 +475,25 @@ private:
         msg.encode_header();
         write(msg);
 
+        hello_timer.cancel();
         hello_timer.expires_from_now(boost::posix_time::seconds(AODV_HELLO_INTERVAL));
-        hello_timer.async_wait(boost::bind(&ad_hoc_client::send_hello, this));
-    }
-
-    void aodv_not_found_timeout(ad_hoc_message &msg, const boost::system::error_code &err) {
-        if (err != boost::asio::error::operation_aborted) {
-            cout << "TIMEOUT!" << endl;
-            msg_buffer.discard(msg.sourceid(), msg.destid());
-        }
+//        hello_timer.async_wait(boost::bind(&ad_hoc_client::send_hello, this));
     }
 
     void aodv_path_discovery_timeout(int node, int rreq_id) {
         if (rreq_buffer.contains(node, rreq_id)) {
-            rreq_buffer.discard(node, rreq_id);
+            rreq_buffer.remove(node, rreq_id);
         }
     }
 
     void aodv_route_timeout(ad_hoc_client_routing_table_item &item) {
-        routing_table_.discard(item.dest);
-        routing_table_.print();
+        routing_table_.erase(item.dest);
     }
 
     void aodv_neighbor_timeout(int neighbor) {
         auto dest_seq = routing_table_.route(neighbor).seq;
-        routing_table_.discard(neighbor);
-        neighbors.discard(neighbor);
+        routing_table_.erase(neighbor);
+        neighbors.remove(neighbor);
         send_rerr(neighbor, dest_seq);
         send_rreq(neighbor, dest_seq + 1);
     }
@@ -531,7 +514,6 @@ private:
     ad_hoc_client_routing_table routing_table_;
     ad_hoc_message_queue waiting_rreq_msg_queue;
     ad_hoc_aodv_rreq_buffer rreq_buffer;
-    ad_hoc_message_buffer msg_buffer;
     ad_hoc_aodv_neighbor_list neighbors;
     boost::asio::deadline_timer hello_timer;
     int aodv_seq;
