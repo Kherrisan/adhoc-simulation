@@ -184,10 +184,10 @@ private:
     unordered_map<int, ad_hoc_participant_ptr> session_map;
     int node[MAX];
     int matrix[MAX][MAX] = {
-            {1, 1, 0, 1, 0, 1, 0, 1},
+            {1, 1, 0, 0, 0, 1, 0, 1},
             {1, 1, 1, 0, 1, 0, 0, 0},
             {0, 1, 1, 0, 1, 1, 1, 1},
-            {1, 0, 0, 1, 0, 0, 0, 0},
+            {0, 0, 0, 1, 0, 0, 0, 0},
             {0, 1, 1, 0, 1, 1, 0, 0},
             {1, 0, 1, 0, 1, 1, 1, 0},
             {0, 0, 1, 0, 0, 1, 1, 1},
@@ -223,7 +223,7 @@ public:
         scope.join(id(), shared_from_this());
         //发起异步的读数据操作，这个读数据操作只负责读取头部，参数：
         //1.socket。和client的连接socket，从该socket的接收缓冲区中读字节数据。
-        //2.rreq_timer_map。创建一个地址是read_msg_的数据的起始位置，长度是ADHOCMESSAGE_HEADER_LENGTH的buffer。
+        //2.msg_timer_map。创建一个地址是read_msg_的数据的起始位置，长度是ADHOCMESSAGE_HEADER_LENGTH的buffer。
         //      当async_read读满了这个buffer（读到了ADHOCMESSAGE_HEADER_LENGTH个字节），则本次读数据完成，会调用回调函数handle_read_header。
         //3.回调函数。通过bind方法绑定了一个参数：this指针，后两个参数是占位符。
         boost::asio::async_read(socket_,

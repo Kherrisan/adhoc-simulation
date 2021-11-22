@@ -6,6 +6,7 @@
 #define ADHOC_SIMULATION_AODV_H
 
 #include <string>
+#include <iomanip>
 #include <unordered_map>
 #include <deque>
 #include <set>
@@ -19,6 +20,11 @@ const int AODV_RREQ = 1;
 const int AODV_RREP = 2;
 const int AODV_RERR = 3;
 const int AODV_HELLO = 4;
+
+const int AODV_PATH_DISCOVERY_TIMEOUT = 30;
+const int AODV_HELLO_TIMEOUT = 30;
+const int AODV_ROUTE_NOT_FOUND_TIMEOUT = 5;
+const int AODV_ROUTE_TIMEOUT = 30;
 
 struct ad_hoc_aodv_rreq {
     int type;
@@ -39,6 +45,14 @@ namespace std {
     struct hash<ad_hoc_aodv_rreq> {
         size_t operator()(const ad_hoc_aodv_rreq &r) const noexcept {
             auto t = make_tuple(r.orig, r.id);
+            return boost::hash_value(t);
+        }
+    };
+
+    template<>
+    struct hash<ad_hoc_message> {
+        size_t operator()(const ad_hoc_message &r) const noexcept {
+            auto t = make_tuple(r.sourceid(), r.destid());
             return boost::hash_value(t);
         }
     };
@@ -69,6 +83,7 @@ public:
     int next_hop;
     int seq;
     int hops;
+    boost::asio::deadline_timer *timer;
 };
 
 class ad_hoc_client_routing_table {
@@ -92,8 +107,14 @@ public:
         routes[route.dest] = route;
     }
 
-    void erase(int id) {
-        routes.erase(id);
+    void discard(int dest) {
+        if (!contains(dest)) {
+            return;
+        }
+        auto route = routes[dest];
+        route.timer->cancel();
+        delete route.timer;
+        routes.erase(dest);
     }
 
     int size() {
@@ -101,20 +122,32 @@ public:
     }
 
     void print() {
-//        cout << "routing table: " << endl;
-//        for (auto route: routes) {
-//            cout << route.first << ": " << route.second.next_hop << ", " << route.second.seq << ", "
-//                 << route.second.hops << endl;
-//        }
-//        cout << endl;
+        cout << left << setw(8) << "dest" << "|"
+             << left << setw(8) << "next" << "|"
+             << left << setw(8) << "seq" << "|"
+             << left << setw(8) << "hops" << endl;
+        for (auto route: routes) {
+            cout << left << setw(8) << route.first << "|"
+                 << left << setw(8) << route.second.next_hop << "|"
+                 << left << setw(8) << route.second.seq << "|"
+                 << left << setw(8) << route.second.hops << endl;
+        }
+        cout << endl;
+    }
+
+    boost::asio::deadline_timer *setup_timer(boost::asio::io_context &io_context, int dest) {
+        if (!contains(dest)) {
+            return nullptr;
+        }
+        auto route = routes[dest];
+        route.timer = new boost::asio::deadline_timer(io_context,
+                                                      boost::posix_time::seconds(AODV_ROUTE_TIMEOUT));
+        return route.timer;
     }
 
 private:
     unordered_map<int, ad_hoc_client_routing_table_item> routes;
 };
-
-const int AODV_PATH_DISCOVERY_TIMEOUT = 100000;
-const int AODV_HELLO_TIMEOUT = 100000;
 
 class ad_hoc_aodv_rreq_buffer {
 public:
@@ -134,7 +167,7 @@ public:
         rreq_timer_map.erase(rreq);
     }
 
-    boost::asio::deadline_timer *setup_path_discovery_timer(boost::asio::io_context &io_context, int src, int id) {
+    boost::asio::deadline_timer *setup_timer(boost::asio::io_context &io_context, int src, int id) {
         ad_hoc_aodv_rreq rreq{};
         rreq.orig = src;
         rreq.id = id;
@@ -146,6 +179,39 @@ public:
 
 private:
     unordered_map<ad_hoc_aodv_rreq, boost::asio::deadline_timer *> rreq_timer_map;
+};
+
+class ad_hoc_message_buffer {
+public:
+    bool contains(int src, int dest) {
+        ad_hoc_message msg;
+        msg.sourceid(src);
+        msg.destid(dest);
+        return msg_timer_map.find(msg) != msg_timer_map.end();
+    }
+
+    void discard(int src, int dest) {
+        ad_hoc_message msg;
+        msg.sourceid(src);
+        msg.destid(dest);
+        auto timer = msg_timer_map[msg];
+        timer->cancel();
+        delete timer;
+        msg_timer_map.erase(msg);
+    }
+
+    boost::asio::deadline_timer *setup_timer(boost::asio::io_context &io_context, int src, int dest) {
+        ad_hoc_message msg;
+        msg.sourceid(src);
+        msg.destid(dest);
+        auto timer = new boost::asio::deadline_timer(io_context,
+                                                     boost::posix_time::seconds(AODV_ROUTE_NOT_FOUND_TIMEOUT));
+        msg_timer_map[msg] = timer;
+        return timer;
+    }
+
+private:
+    unordered_map<ad_hoc_message, boost::asio::deadline_timer *> msg_timer_map;
 };
 
 class ad_hoc_aodv_neighbor_list {
@@ -165,7 +231,7 @@ public:
         return neighbor_timer_map[neighbor];
     }
 
-    boost::asio::deadline_timer *setup_neighbor_timer(boost::asio::io_context &io_context, int neighbor) {
+    boost::asio::deadline_timer *setup_timer(boost::asio::io_context &io_context, int neighbor) {
         auto timer = new boost::asio::deadline_timer(io_context, boost::posix_time::seconds(AODV_HELLO_TIMEOUT));
         neighbor_timer_map[neighbor] = timer;
         return timer;

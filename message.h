@@ -147,6 +147,10 @@ public:
         return true;
     }
 
+    bool operator==(const ad_hoc_message &r) const {
+        return source_id == r.source_id && dest_id == r.dest_id;
+    }
+
 private:
     //存放消息首部和载荷的字节数组
     char data_[ADHOCMESSAGE_HEADER_LENGTH + ADHOCMESSAGE_MAX_BODY_LENGTH];
