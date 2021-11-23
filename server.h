@@ -22,7 +22,7 @@
 #include "message.h"
 #include "aodv.h"
 
-const int UDG_UPDATE_TIMEOUT = 30;
+const int UDG_UPDATE_TIMEOUT = 60;
 
 using boost::asio::ip::tcp;
 using namespace std;
@@ -30,7 +30,7 @@ using namespace std;
 typedef deque<ad_hoc_message> message_queue;
 
 void print_time() {
-    time_t now = time(0);
+    time_t now = time(nullptr);
     tm *ltm = localtime(&now);
     char loc_date[20];
     sprintf(loc_date, "%d:%02d:%02d", ltm->tm_hour, ltm->tm_min, ltm->tm_sec);
@@ -50,6 +50,7 @@ void print(ad_hoc_message &msg) {
         cout << "[message] src: " << msg.sourceid() << ", dst: " << msg.destid() << ", sender: " << msg.sendid()
              << ", receiver: " << msg.receiveid() << ", type: " << msg.msg_type() << endl;
         print_aodv(msg.body());
+        cout << endl;
 #endif
     }
 }
@@ -164,7 +165,7 @@ public:
                 session_map[msg.receiveid()]->deliver(msg);    //调用ID号对应的session去发送信息
                 return true;
             } else {
-                reply_error(msg);
+//                reply_error(msg);
                 return false;
             }
 

@@ -185,6 +185,7 @@ private:
             auto msg = write_msgs_.front();
 #if DEBUG
             cout << "sent" << endl;
+            print_time();
             print_message(msg);
             if (msg.msg_type() == ORDINARY_MESSAGE) {
                 cout.write(msg.body(), msg.body_length());
@@ -225,6 +226,10 @@ private:
             }
             msg.sendid(id());
             msg.encode_header();
+#if DEBUG
+            cout << "sending" << endl;
+            print(msg);
+#endif
             bool write_in_progress = !write_msgs_.empty();
             write_msgs_.push_back(msg);
             if (!write_in_progress) {
