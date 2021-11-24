@@ -5,8 +5,6 @@
 #ifndef ADHOC_SIMULATION_CLIENT_H
 #define ADHOC_SIMULATION_CLIENT_H
 
-#define DEBUG true
-
 #include <string>
 #include <deque>
 #include <ctime>
@@ -18,6 +16,7 @@
 #include "aodv.h"
 #include "wormhole.h"
 #include "message_handler.h"
+#include "utils.h"
 
 using boost::asio::ip::tcp;
 using namespace std;
@@ -26,33 +25,6 @@ typedef deque<ad_hoc_message> ad_hoc_message_queue;
 
 const int AODV_HELLO_INTERVAL = 10;
 const int AODV_ACTIVE_ROUTE_TIMEOUT = 300;
-
-void print_time() {
-    time_t now = time(nullptr);
-    tm *ltm = localtime(&now);
-    char loc_date[20];
-    sprintf(loc_date, "%d:%02d:%02d", ltm->tm_hour, ltm->tm_min, ltm->tm_sec);
-    cout << loc_date << endl;
-}
-
-void print(ad_hoc_message &msg) {
-    print_time();
-    if (msg.msg_type() == ORDINARY_MESSAGE) {
-        cout << "[message] src: " << msg.sourceid() << ", dst: " << msg.destid() << ", sender: " << msg.sendid()
-             << ", receiver: " << msg.receiveid() << ", type: " << msg.msg_type() << endl;
-        cout << "[user_message] ";
-        cout.write(msg.body(), msg.body_length());
-        cout << endl;
-        cout << endl;
-    } else {
-#if DEBUG
-        cout << "[message] src: " << msg.sourceid() << ", dst: " << msg.destid() << ", sender: " << msg.sendid()
-             << ", receiver: " << msg.receiveid() << ", type: " << msg.msg_type() << endl;
-        print_aodv(msg.body());
-        cout << endl;
-#endif
-    }
-}
 
 class ad_hoc_client : public ad_hoc_message_handler {
 public:
@@ -100,6 +72,15 @@ public:
         io_context.post(boost::bind(&ad_hoc_client::do_write, this, msg));
     }
 
+    void write_to_wormhole(ad_hoc_message &msg) {
+        ad_hoc_message wormhole_msg;
+        wormhole_msg.body_length(msg.length());
+        wormhole_msg.msg_type(WORMHOLE_MESSAGE);
+        memcpy(wormhole_msg.body(), msg.data(), msg.length());
+        wormhole_msg.encode_header();
+        wormhole_client->write(wormhole_msg);
+    }
+
     void close() {
         io_context.post(boost::bind(&ad_hoc_client::do_close, this));
     }
@@ -112,11 +93,15 @@ public:
 
     }
 
-    void handle_message(ad_hoc_message &msg) {
-        if (read_msg_.msg_type() == AODV_MESSAGE) {
-            handle_adov_message(msg);
+    void handle_message(ad_hoc_message &msg, bool not_to_wormhole) {
+#if DEBUG
+        cout << "handle" << endl;
+        print(msg);
+#endif
+        if (msg.msg_type() == AODV_MESSAGE) {
+            handle_adov_message(msg, not_to_wormhole);
         } else {
-            handle_user_message(msg);
+            handle_user_message(msg, not_to_wormhole);
         }
     }
 
@@ -137,7 +122,9 @@ private:
                                     boost::asio::buffer(read_msg_.data(), ADHOCMESSAGE_HEADER_LENGTH),
                                     boost::bind(&ad_hoc_client::handle_read_header, this,
                                                 boost::asio::placeholders::error));
+#if DYNAMIC
             send_hello();
+#endif
         } else {
             cerr << error << endl;
         }
@@ -174,7 +161,7 @@ private:
             print(read_msg_);
             routing_table_.print();
 #endif
-            handle_message(read_msg_);
+            handle_message(read_msg_, false);
             boost::asio::async_read(socket,
                                     boost::asio::buffer(read_msg_.data(), ADHOCMESSAGE_HEADER_LENGTH),
                                     boost::bind(&ad_hoc_client::handle_read_header,
@@ -261,18 +248,14 @@ private:
         }
     }
 
-    void handle_user_message(ad_hoc_message msg) {
+    void handle_user_message(ad_hoc_message msg, bool not_to_wormhole) {
         if (id() == msg.destid()) {
 #if DEBUG
             cout.write(read_msg_.body(), read_msg_.body_length());
             cout << endl;
 #endif
-        } else if (wormhole != -1) {
-            ad_hoc_message wormhole_msg;
-            wormhole_msg.body_length(msg.length());
-            memcpy(wormhole_msg.body(), wormhole_msg.data(), msg.length());
-            wormhole_msg.encode_header();
-            wormhole_client->write(wormhole_msg);
+        } else if (wormhole != -1 && !not_to_wormhole) {
+            write_to_wormhole(msg);
         } else {
             //转发消息给下一跳
             auto route = routing_table_.route(msg.destid());
@@ -284,29 +267,31 @@ private:
         }
     }
 
-    void handle_adov_message(ad_hoc_message &msg) {
+    void handle_adov_message(ad_hoc_message &msg, bool not_to_wormhole) {
         int *aodv_type = (int *) msg.body();
         if (*aodv_type == AODV_RREQ) {
             auto rreq = (ad_hoc_aodv_rreq *) msg.body();
-            handle_rreq(msg, *rreq);
+            handle_rreq(msg, *rreq, not_to_wormhole);
         } else if (*aodv_type == AODV_RREP) {
             auto rrep = (ad_hoc_aodv_rrep *) msg.body();
-            handle_rrep(msg, *rrep);
+            handle_rrep(msg, *rrep, not_to_wormhole);
         } else if (*aodv_type == AODV_RERR) {
             auto rerr = (ad_hoc_aodv_rerr *) msg.body();
-            handle_rerr(msg, *rerr);
+            handle_rerr(msg, *rerr, not_to_wormhole);
         } else {
-            handle_hello(msg);
+            handle_hello(msg, not_to_wormhole);
         }
     }
 
     void aodv_restart_route_timer(ad_hoc_client_routing_table_item item) {
+#if DYNAMIC
         if (item.timer == nullptr) {
             item.timer = make_shared<boost::asio::deadline_timer>(io_context);
         }
         item.timer->expires_from_now(boost::posix_time::seconds(AODV_ACTIVE_ROUTE_TIMEOUT));
         item.timer->async_wait(
                 boost::bind(&ad_hoc_client::aodv_route_timeout, this, item, boost::asio::placeholders::error));
+#endif
     }
 
     /**
@@ -315,7 +300,7 @@ private:
      * @param msg
      * @param rreq
      */
-    void handle_rreq(ad_hoc_message &msg, ad_hoc_aodv_rreq &rreq) {
+    void handle_rreq(ad_hoc_message &msg, ad_hoc_aodv_rreq &rreq, bool not_to_wormhole) {
         int hops = rreq.hops + 1;
 
         //建立反向路由，便于反传rrep
@@ -367,20 +352,16 @@ private:
                 send_rrep(rreq.orig, rreq.dest, dest_route.seq, dest_route.hops, msg.sendid());
             }
         } else {
-            rreq.hops += 1;
-            forward_rreq(msg, rreq);
-
-            if (wormhole != -1) {
-                ad_hoc_message wormhole_msg;
-                wormhole_msg.body_length(msg.length());
-                memcpy(wormhole_msg.body(), wormhole_msg.data(), msg.length());
-                wormhole_msg.encode_header();
-                wormhole_client->write(wormhole_msg);
+            if (wormhole != -1 && !not_to_wormhole) {
+                write_to_wormhole(msg);
+            } else {
+                rreq.hops += 1;
+                forward_rreq(msg, rreq);
             }
         }
     }
 
-    void handle_rrep(ad_hoc_message &msg, ad_hoc_aodv_rrep &rrep) {
+    void handle_rrep(ad_hoc_message &msg, ad_hoc_aodv_rrep &rrep, bool not_to_wormhole) {
         int hops = rrep.hops + 1;
         rrep.hops = hops;
 
@@ -423,12 +404,8 @@ private:
                 aodv_restart_route_timer(routing_table_.route(rrep.dest));
             }
 
-            if (wormhole != -1) {
-                ad_hoc_message wormhole_msg;
-                wormhole_msg.body_length(msg.length());
-                memcpy(wormhole_msg.body(), wormhole_msg.data(), msg.length());
-                wormhole_msg.encode_header();
-                wormhole_client->write(wormhole_msg);
+            if (wormhole != -1 && !not_to_wormhole) {
+                write_to_wormhole(msg);
             } else {
                 auto route = routing_table_.route(rrep.orig);
                 forward_rrep(msg, route.next_hop);
@@ -438,7 +415,7 @@ private:
         routing_table_.print();
     }
 
-    void handle_rerr(ad_hoc_message &msg, ad_hoc_aodv_rerr &rerr) {
+    void handle_rerr(ad_hoc_message &msg, ad_hoc_aodv_rerr &rerr, bool not_to_wormhole) {
         if (id() == rerr.dest) {
             return;
         }
@@ -452,7 +429,7 @@ private:
         }
     }
 
-    void handle_hello(ad_hoc_message &msg) {
+    void handle_hello(ad_hoc_message &msg, bool not_to_wormhole) {
         int neighbor = msg.sendid();
         neighbors.print();
         if (this->neighbors.contains(neighbor)) {

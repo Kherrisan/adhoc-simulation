@@ -90,9 +90,7 @@ public:
 
 class ad_hoc_client_routing_table {
 public:
-    ad_hoc_client_routing_table() {
-
-    }
+    ad_hoc_client_routing_table() = default;
 
     ad_hoc_client_routing_table_item &route(int id) {
         return routes[id];

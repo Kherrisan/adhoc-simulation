@@ -9,7 +9,7 @@
 
 class ad_hoc_message_handler {
 public:
-    virtual void handle_message(ad_hoc_message &) = 0;
+    virtual void handle_message(ad_hoc_message &, bool) = 0;
 };
 
 #endif //ADHOC_SIMULATION_MESSAGE_HANDLER_H

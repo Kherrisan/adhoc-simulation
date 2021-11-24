@@ -13,6 +13,7 @@
 #include <boost/asio.hpp>
 
 #include "message_handler.h"
+#include "utils.h"
 
 using boost::asio::ip::tcp;
 using namespace std;
@@ -110,10 +111,14 @@ private:
      */
     void handle_read_body(const boost::system::error_code &error) {
         if (!error) {
+#if DEBUG
+            cout << "received" << endl;
+            print(read_msg_);
+#endif
             ad_hoc_message body_msg;
             memcpy(body_msg.data(), read_msg_.body(), read_msg_.body_length());
             body_msg.decode_header();
-            client->handle_message(body_msg);
+            client->handle_message(body_msg, true);
             boost::asio::async_read(socket,
                                     boost::asio::buffer(read_msg_.data(), ADHOCMESSAGE_HEADER_LENGTH),
                                     boost::bind(&ad_hoc_wormhole_client::handle_read_header,
@@ -132,6 +137,11 @@ private:
      */
     void handle_write(const boost::system::error_code &error) {
         if (!error) {
+            auto msg = write_msgs_.front();
+#if DEBUG
+            cout << "sent" << endl;
+            print(msg);
+#endif
             write_msgs_.pop_front();
             if (!write_msgs_.empty()) {
                 boost::asio::async_write(socket,
@@ -154,6 +164,10 @@ private:
      * @param msg
      */
     void do_write(ad_hoc_message msg) {
+#if DEBUG
+        cout << "sending" << endl;
+        print(msg);
+#endif
         msg.sendid(socket.local_endpoint().port());
         msg.encode_header();
         bool write_in_progress = !write_msgs_.empty();

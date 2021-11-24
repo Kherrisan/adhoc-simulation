@@ -12,7 +12,7 @@ int main(int argc, char **argv) {
     }
     string strPort(argv[1]);
     bool wc = false;
-    if (argc > 2 && strcmp(argv[2], "wc")) {
+    if (argc > 2 && !strcmp(argv[2], "wc")) {
         wc = true;
     }
     int port = stoi(strPort);

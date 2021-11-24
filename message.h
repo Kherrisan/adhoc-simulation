@@ -16,6 +16,7 @@ const int AODV_BROADCAST_ADDRESS = 0;
 
 const int ORDINARY_MESSAGE = 0;
 const int AODV_MESSAGE = 1;
+const int WORMHOLE_MESSAGE = 2;
 
 // message : sendid -> receiveid -> sourceid -> destid -> body -> type
 

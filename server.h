@@ -5,8 +5,6 @@
 #ifndef ADHOC_SIMULATION_SERVER_H
 #define ADHOC_SIMULATION_SERVER_H
 
-#define DEBUG true
-
 #include <string>
 #include <boost/array.hpp>
 #include <boost/bind/bind.hpp>
@@ -21,6 +19,7 @@
 
 #include "message.h"
 #include "aodv.h"
+#include "utils.h"
 
 const int UDG_UPDATE_TIMEOUT = 60;
 
@@ -28,32 +27,6 @@ using boost::asio::ip::tcp;
 using namespace std;
 //使用deque来实现串型消息队列，主要用于待发送消息队列
 typedef deque<ad_hoc_message> message_queue;
-
-void print_time() {
-    time_t now = time(nullptr);
-    tm *ltm = localtime(&now);
-    char loc_date[20];
-    sprintf(loc_date, "%d:%02d:%02d", ltm->tm_hour, ltm->tm_min, ltm->tm_sec);
-    cout << loc_date << endl;
-}
-
-void print(ad_hoc_message &msg) {
-    print_time();
-    if (msg.msg_type() == ORDINARY_MESSAGE) {
-        cout << "[message] src: " << msg.sourceid() << ", dst: " << msg.destid() << ", sender: " << msg.sendid()
-             << ", receiver: " << msg.receiveid() << ", type: " << msg.msg_type() << endl;
-        cout.write(msg.body(), msg.body_length());
-        cout << endl;
-        cout << endl;
-    } else {
-#if DEBUG
-        cout << "[message] src: " << msg.sourceid() << ", dst: " << msg.destid() << ", sender: " << msg.sendid()
-             << ", receiver: " << msg.receiveid() << ", type: " << msg.msg_type() << endl;
-        print_aodv(msg.body());
-        cout << endl;
-#endif
-    }
-}
 
 class ad_hoc_participant {
 public:
@@ -69,7 +42,8 @@ typedef boost::shared_ptr<ad_hoc_participant> ad_hoc_participant_ptr;
 //负责管理多个连接的ad_hoc_session，维护一个ID和session映射关系的哈希表
 class ad_hoc_scope {
 public:
-    ad_hoc_scope(bool wormhole_channel) : wormhole_channel(wormhole_channel) {
+    ad_hoc_scope(bool wormhole_channel, boost::asio::io_context &io_context) : wormhole_channel(wormhole_channel),
+                                                                               io_context(io_context) {
 
     }
 
@@ -149,17 +123,12 @@ public:
         * @param msg 待转发消息
         * @return
         */
-    bool deliver(ad_hoc_message &msg) {
-        if (msg.receiveid() == AODV_BROADCAST_ADDRESS) {
-            //一跳范围内广播
+    bool deliver(ad_hoc_message msg) {
+        if (wormhole_channel) {
 #if DEBUG
-            cout << "broadcasting" << endl;
+            cout << "deliver through wormhole" << endl;
             print(msg);
 #endif
-            broadcast(msg);
-        } else if (session_map.find(msg.receiveid()) == session_map.end()) { //没有查到相应的ID，就返回错误
-            return false;
-        } else if (wormhole_channel) {
             int dest_i;
             if (msg.sendid() == node[0]) {
                 dest_i = 1;
@@ -167,6 +136,17 @@ public:
                 dest_i = 0;
             }
             session_map[node[dest_i]]->deliver(msg);
+        } else if (msg.receiveid() == AODV_BROADCAST_ADDRESS) {
+            //一跳范围内广播
+#if DEBUG
+            cout << "broadcasting" << endl;
+            print(msg);
+#endif
+            boost::asio::deadline_timer timer(io_context);
+            timer.expires_from_now(boost::posix_time::millisec(100));
+            timer.async_wait(boost::bind(&ad_hoc_scope::broadcast, this, msg));
+        } else if (session_map.find(msg.receiveid()) == session_map.end()) { //没有查到相应的ID，就返回错误
+            return false;
         } else {
             if (judge_deliver(msg))       //根据网络拓扑图判断是否能转发信息
             {
@@ -174,7 +154,10 @@ public:
                 cout << "sending" << endl;
                 print(msg);
 #endif
-                session_map[msg.receiveid()]->deliver(msg);    //调用ID号对应的session去发送信息
+                boost::asio::deadline_timer timer(io_context);
+                timer.expires_from_now(boost::posix_time::millisec(100));
+                timer.async_wait(boost::bind(&ad_hoc_scope::deliver, this, msg.receiveid(), msg));
+//                session_map[msg.receiveid()]->deliver(msg);    //调用ID号对应的session去发送信息
                 return true;
             } else {
 //                reply_error(msg);
@@ -183,6 +166,10 @@ public:
 
         }
         return false;
+    }
+
+    void deliver(int id, ad_hoc_message &msg) {
+        session_map[id]->deliver(msg);    //调用ID号对应的session去发送信息
     }
 
     /**
@@ -203,11 +190,19 @@ public:
         }
     }
 
-    int matrix[MAX][MAX];
+    int matrix[MAX][MAX] = {{1, 1, 0, 0, 1, 0, 0, 1},
+                            {1, 1, 1, 0, 0, 0, 0, 0},
+                            {0, 1, 1, 1, 0, 0, 0, 0},
+                            {0, 0, 1, 1, 0, 0, 1, 0},
+                            {1, 0, 0, 0, 1, 1, 0, 0},
+                            {0, 0, 0, 0, 1, 1, 1, 0},
+                            {0, 0, 0, 1, 0, 1, 1, 0},
+                            {1, 0, 0, 0, 0, 0, 0, 1}};
 private:
     unordered_map<int, ad_hoc_participant_ptr> session_map;
     int node[MAX];
     bool wormhole_channel;
+    boost::asio::io_context &io_context;
 };
 
 
@@ -223,8 +218,8 @@ public:
     * @param ioContext 此session未来进行读写操作时，需要维护其IO事件的io_context。应该和server使用同一个io_context。
     * @param scope 此session隶属的scope。
     */
-    ad_hoc_session(boost::asio::io_context &ioContext, ad_hoc_scope &scope, bool wormhole_channel) : socket_(ioContext),
-                                                                                                     scope(scope) {
+    ad_hoc_session(boost::asio::io_context &ioContext, ad_hoc_scope &scope) : socket_(ioContext),
+                                                                              scope(scope) {
     }
 
     tcp::socket &socket() {
@@ -389,11 +384,11 @@ public:
                                                                                                            boost::posix_time::seconds(
                                                                                                                    UDG_UPDATE_TIMEOUT)),
                                                                                                  wormhole_channel(wc),
-                                                                                                 scope(wc) {
+                                                                                                 scope(wc, io_context) {
         cout << "start listening at port " << endpoint.port() << endl;
         if (!wormhole_channel) {
             cout << "running at normal mode." << endl;
-            scope.create_UDG();
+//            scope.create_UDG();
             scope.print_UDG();
         } else {
             cout << "running at wormhole mode." << endl;
