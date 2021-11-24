@@ -154,6 +154,8 @@ private:
      * @param msg
      */
     void do_write(ad_hoc_message msg) {
+        msg.sendid(socket.local_endpoint().port());
+        msg.encode_header();
         bool write_in_progress = !write_msgs_.empty();
         write_msgs_.push_back(msg);
         if (!write_in_progress) {

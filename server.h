@@ -69,6 +69,10 @@ typedef boost::shared_ptr<ad_hoc_participant> ad_hoc_participant_ptr;
 //负责管理多个连接的ad_hoc_session，维护一个ID和session映射关系的哈希表
 class ad_hoc_scope {
 public:
+    ad_hoc_scope(bool wormhole_channel) : wormhole_channel(wormhole_channel) {
+
+    }
+
     void join(int id, ad_hoc_participant_ptr participant) {
         session_map[id] = participant;
 
@@ -155,6 +159,14 @@ public:
             broadcast(msg);
         } else if (session_map.find(msg.receiveid()) == session_map.end()) { //没有查到相应的ID，就返回错误
             return false;
+        } else if (wormhole_channel) {
+            int dest_i;
+            if (msg.sendid() == node[0]) {
+                dest_i = 1;
+            } else {
+                dest_i = 0;
+            }
+            session_map[node[dest_i]]->deliver(msg);
         } else {
             if (judge_deliver(msg))       //根据网络拓扑图判断是否能转发信息
             {
@@ -191,20 +203,11 @@ public:
         }
     }
 
-    void reply_error(ad_hoc_message &msg) {
-        ad_hoc_message err(msg);
-        err.msg_type(3);
-        err.sendid(msg.receiveid());
-        err.receiveid(msg.sendid());
-        err.destid(msg.sourceid());
-        err.sourceid(msg.destid());
-        session_map[msg.sendid()]->deliver(err);
-    }
-
+    int matrix[MAX][MAX];
 private:
     unordered_map<int, ad_hoc_participant_ptr> session_map;
     int node[MAX];
-    int matrix[MAX][MAX];
+    bool wormhole_channel;
 };
 
 
@@ -220,7 +223,8 @@ public:
     * @param ioContext 此session未来进行读写操作时，需要维护其IO事件的io_context。应该和server使用同一个io_context。
     * @param scope 此session隶属的scope。
     */
-    ad_hoc_session(boost::asio::io_context &ioContext, ad_hoc_scope &scope) : socket_(ioContext), scope(scope) {
+    ad_hoc_session(boost::asio::io_context &ioContext, ad_hoc_scope &scope, bool wormhole_channel) : socket_(ioContext),
+                                                                                                     scope(scope) {
     }
 
     tcp::socket &socket() {
@@ -281,8 +285,8 @@ public:
         if (!error) {
 #if DEBUG
             cout << "received" << endl;
-#endif
             print(read_msg_);
+#endif
             //由scope去查询该message里的目的ID，进行消息转发。
             scope.deliver(read_msg_);
             //发起下一次异步的读操作，等待读取的对象为下一个数据包的首部。
@@ -363,6 +367,7 @@ private:
     ad_hoc_message read_msg_; //存放接收到的消息的存储空间。这个对象是复用的，不会重新初始化，但是其内部的数据在每次收到新消息后会被重新填充。
     //等待发送的消息队列。为了防止有多个用户线程同时发送数据，这里将多个待发送的数据存放在一个队列中，由IO线程逐一发送。
     message_queue write_msgs_;
+    bool wormhole_channel;
 };
 
 typedef boost::shared_ptr<ad_hoc_session> ad_hoc_session_ptr;
@@ -377,14 +382,26 @@ public:
      * @param endpoint server要监听的端口
      * @param io_context 负责server收发消息的IO事件循环。当异步函数绑定好回调函数之后，需要运行io_context.run()来启动事件循环。
      */
-    ad_hoc_server(const tcp::endpoint &endpoint, boost::asio::io_context &io_context) : acceptor(io_context, endpoint),
-                                                                                        io_context(io_context),
-                                                                                        udg_timer(io_context,
-                                                                                                  boost::posix_time::seconds(
-                                                                                                          UDG_UPDATE_TIMEOUT)) {
+    ad_hoc_server(const tcp::endpoint &endpoint, boost::asio::io_context &io_context, bool wc) : acceptor(io_context,
+                                                                                                          endpoint),
+                                                                                                 io_context(io_context),
+                                                                                                 udg_timer(io_context,
+                                                                                                           boost::posix_time::seconds(
+                                                                                                                   UDG_UPDATE_TIMEOUT)),
+                                                                                                 wormhole_channel(wc),
+                                                                                                 scope(wc) {
         cout << "start listening at port " << endpoint.port() << endl;
-        scope.create_UDG();
-        scope.print_UDG();
+        if (!wormhole_channel) {
+            cout << "running at normal mode." << endl;
+            scope.create_UDG();
+            scope.print_UDG();
+        } else {
+            cout << "running at wormhole mode." << endl;
+            scope.create_UDG();
+            scope.matrix[0][1] = scope.matrix[1][0] = 1;
+            scope.print_UDG();
+        }
+
         //创建一个空的session对象
         ad_hoc_session_ptr new_session(new ad_hoc_session(io_context, scope));
         //服务器异步监听端口，直到有新连接到来
@@ -401,7 +418,7 @@ public:
 //        udg_timer.async_wait(boost::bind(&ad_hoc_server::update_udg, this));
     }
 
-    void regenerate_matrix(){
+    void regenerate_matrix() {
         io_context.post(boost::bind(&ad_hoc_server::update_udg, this));
     }
 
@@ -426,7 +443,6 @@ private:
             cout << "accept incoming connection: " << session->socket().remote_endpoint().address() << ":"
                  << session->id() << endl;
             //启动该session的接收消息的循环
-
             session->start();
             //同构造函数里的步骤，等待下一个新连接的到来
             ad_hoc_session_ptr new_session(new ad_hoc_session(io_context, scope));
@@ -446,6 +462,7 @@ private:
     tcp::acceptor acceptor; //端口监听器，接收新的连接并创建一个对应的socket
     boost::asio::io_context &io_context;
     ad_hoc_scope scope; //scope对象，每个server有一个scope，维护ID->session的映射表
+    bool wormhole_channel;
 };
 
 #endif //ADHOC_SIMULATION_SERVER_H
