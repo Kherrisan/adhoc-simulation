@@ -26,6 +26,7 @@ const int AODV_HELLO = 4;
 
 const int AODV_PATH_DISCOVERY_TIMEOUT = 30;
 const int AODV_HELLO_TIMEOUT = 30;
+const int AODV_MESSAGE_WAITING_ROUTE_TIMEOUT = 5;
 
 struct ad_hoc_aodv_rreq {
     int type;
@@ -46,6 +47,14 @@ namespace std {
     struct hash<ad_hoc_aodv_rreq> {
         size_t operator()(const ad_hoc_aodv_rreq &r) const noexcept {
             auto t = make_tuple(r.orig, r.id);
+            return boost::hash_value(t);
+        }
+    };
+
+    template<>
+    struct hash<ad_hoc_message> {
+        size_t operator()(const ad_hoc_message &r) const noexcept {
+            auto t = make_tuple(r.sourceid(), r.destid(), r.sendid(), r.receiveid(), r.msg_type(), r.length());
             return boost::hash_value(t);
         }
     };
@@ -158,6 +167,26 @@ public:
 
 private:
     unordered_map<ad_hoc_aodv_rreq, timer_ptr> rreq_timer_map;
+};
+
+class ad_hoc_aodv_message_buffer {
+public:
+
+    bool contains(ad_hoc_message &msg) {
+        return msg_timer_map.find(msg) != msg_timer_map.end();
+    }
+
+    void remove(ad_hoc_message &msg) {
+        msg_timer_map.erase(msg);
+    }
+
+    timer_ptr new_timer(boost::asio::io_context &io_context, ad_hoc_message &msg) {
+        msg_timer_map[msg] = make_shared<boost::asio::deadline_timer>(io_context, boost::posix_time::seconds(
+                AODV_MESSAGE_WAITING_ROUTE_TIMEOUT));
+        return msg_timer_map[msg];
+    }
+
+    unordered_map<ad_hoc_message, timer_ptr> msg_timer_map;
 };
 
 class ad_hoc_aodv_neighbor_list {

@@ -398,7 +398,11 @@ public:
                                       new_session,
                                       boost::asio::placeholders::error
                               ));
-        udg_timer.async_wait(boost::bind(&ad_hoc_server::update_udg, this));
+//        udg_timer.async_wait(boost::bind(&ad_hoc_server::update_udg, this));
+    }
+
+    void regenerate_matrix(){
+        io_context.post(boost::bind(&ad_hoc_server::update_udg, this));
     }
 
 private:
@@ -406,8 +410,8 @@ private:
     void update_udg() {
         scope.create_UDG();
         scope.print_UDG();
-        udg_timer.expires_from_now(boost::posix_time::seconds(UDG_UPDATE_TIMEOUT));
-        udg_timer.async_wait(boost::bind(&ad_hoc_server::update_udg, this));
+//        udg_timer.expires_from_now(boost::posix_time::seconds(UDG_UPDATE_TIMEOUT));
+//        udg_timer.async_wait(boost::bind(&ad_hoc_server::update_udg, this));
     }
 
     /**
