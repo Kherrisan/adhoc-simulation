@@ -12,16 +12,13 @@
 #include <boost/shared_ptr.hpp>
 #include <boost/asio.hpp>
 
+#include "message_handler.h"
+
 using boost::asio::ip::tcp;
 using namespace std;
 
 
 typedef deque<ad_hoc_message> ad_hoc_message_queue;
-
-class ad_hoc_message_handler {
-public:
-    virtual void handle_message(ad_hoc_message &);
-};
 
 class ad_hoc_wormhole_client {
 public:

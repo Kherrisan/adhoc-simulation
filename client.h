@@ -17,6 +17,7 @@
 #include "message.h"
 #include "aodv.h"
 #include "wormhole.h"
+#include "message_handler.h"
 
 using boost::asio::ip::tcp;
 using namespace std;
