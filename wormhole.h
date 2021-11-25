@@ -7,6 +7,7 @@
 
 #include <string>
 #include <deque>
+#include <vector>
 #include <ctime>
 #include <boost/bind/bind.hpp>
 #include <boost/shared_ptr.hpp>
@@ -15,11 +16,63 @@
 #include "message_handler.h"
 #include "utils.h"
 
+const int AODV_WORMHOLE_DIFF_THRESHOLD = 3;
+const int AODV_WORMHOLE_WATCHDOG_TIMEOUT = 10;
+
 using boost::asio::ip::tcp;
 using namespace std;
 
 
 typedef deque<ad_hoc_message> ad_hoc_message_queue;
+
+struct ad_hoc_wormhole_watchdog_item {
+    //input-output
+    int diff;
+    timer_ptr timer;
+};
+
+class ad_hoc_wormhole_watchdog {
+public:
+    ad_hoc_wormhole_watchdog_item &start_watching(boost::asio::io_context &io_context, int neighbor) {
+        neighbor_diff_map[neighbor] = ad_hoc_wormhole_watchdog_item{0,
+                                                                    make_shared<boost::asio::deadline_timer>(
+                                                                            io_context)};
+        return neighbor_diff_map[neighbor];
+    }
+
+    timer_ptr reset_watching(int neighbor) {
+        auto timer = neighbor_diff_map[neighbor].timer;
+        timer->expires_from_now(boost::posix_time::seconds(AODV_WORMHOLE_WATCHDOG_TIMEOUT));
+        return timer;
+    }
+
+    void increment_rx(int neighbor) {
+        neighbor_diff_map[neighbor].diff++;
+    }
+
+    void increment_tx(int neighbor) {
+        neighbor_diff_map[neighbor].diff--;
+    }
+
+    bool is_wormhole(int neighbor) {
+        if (std::find(wormhole_list.begin(), wormhole_list.end(), neighbor) != wormhole_list.end()) {
+            return true;
+        }
+        if (neighbor_diff_map.find(neighbor) == neighbor_diff_map.end()) {
+            return false;
+        }
+        if (neighbor_diff_map[neighbor].diff > AODV_WORMHOLE_DIFF_THRESHOLD) {
+            wormhole_list.push_back(neighbor);
+            return true;
+        }
+        return false;
+    }
+
+private:
+    unordered_map<int, ad_hoc_wormhole_watchdog_item> neighbor_diff_map;
+    vector<int> wormhole_list;
+};
+
 
 class ad_hoc_wormhole_client {
 public:

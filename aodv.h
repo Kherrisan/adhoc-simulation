@@ -23,6 +23,7 @@ const int AODV_RREQ = 1;
 const int AODV_RREP = 2;
 const int AODV_RERR = 3;
 const int AODV_HELLO = 4;
+const int AODV_BACK = 5;
 
 const int AODV_PATH_DISCOVERY_TIMEOUT = 30;
 const int AODV_HELLO_TIMEOUT = 30;
@@ -79,6 +80,12 @@ struct ad_hoc_aodv_hello {
     int type;
 };
 
+struct ad_hoc_aodv_back {
+    int type;
+    int sender;
+    int receiver;
+};
+
 class ad_hoc_client_routing_table_item {
 public:
     int dest;
@@ -109,6 +116,14 @@ public:
 
     void remove(int id) {
         routes.erase(id);
+    }
+
+    void remove_by_next(int id) {
+        for (auto itr = routes.begin(); itr != routes.end(); itr++) {
+            if (itr->second.next_hop == id) {
+                routes.erase(itr->first);
+            }
+        }
     }
 
     int size() {
@@ -222,7 +237,6 @@ public:
         cout << endl;
     }
 
-private:
     unordered_map<int, timer_ptr> neighbor_timer_map;
 };
 
