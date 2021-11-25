@@ -22,6 +22,11 @@ const int WORMHOLE_MESSAGE = 2;
 
 class ad_hoc_message {
 public:
+    ad_hoc_message(const ad_hoc_message &msg) {
+        memcpy(data_, msg.data_, ADHOCMESSAGE_HEADER_LENGTH + ADHOCMESSAGE_MAX_BODY_LENGTH);
+        decode_header();
+    }
+
     ad_hoc_message() : body_length_(0) {
 
     }

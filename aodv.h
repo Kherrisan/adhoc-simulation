@@ -204,6 +204,10 @@ public:
 
 class ad_hoc_aodv_neighbor_list {
 public:
+    bool empty() {
+        return neighbor_timer_map.empty();
+    }
+
     bool contains(int neighbor) {
         return neighbor_timer_map.find(neighbor) != neighbor_timer_map.end();
     }

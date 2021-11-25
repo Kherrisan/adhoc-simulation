@@ -476,10 +476,18 @@ private:
     }
 
     void broadcast_rreq(ad_hoc_message &msg, ad_hoc_aodv_rreq &rreq) {
-        for (auto neighbor: neighbors.neighbor_timer_map) {
+        if (neighbors.neighbor_timer_map.empty()) {
             memcpy(msg.body(), &rreq, msg.body_length());
             msg.sendid(id());
             msg.receiveid(AODV_BROADCAST_ADDRESS);
+            msg.encode_header();
+            write(msg);
+            return;
+        }
+        for (auto neighbor: neighbors.neighbor_timer_map) {
+            memcpy(msg.body(), &rreq, msg.body_length());
+            msg.sendid(id());
+            msg.receiveid(neighbor.first);
             msg.encode_header();
             write(msg);
         }
@@ -493,9 +501,17 @@ private:
     }
 
     void broadcast_rerr(ad_hoc_message &msg) {
-        msg.sendid(id());
-        msg.receiveid(AODV_BROADCAST_ADDRESS);
-        write(msg);
+        if (neighbors.neighbor_timer_map.empty()) {
+            msg.sendid(id());
+            msg.receiveid(AODV_BROADCAST_ADDRESS);
+            write(msg);
+            return;
+        }
+        for (auto neighbor: neighbors.neighbor_timer_map) {
+            msg.sendid(id());
+            msg.receiveid(neighbor.first);
+            write(msg);
+        }
     }
 
     void broadcast_back(ad_hoc_message &msg) {
@@ -518,13 +534,11 @@ private:
         ad_hoc_message msg;
         msg.sourceid(id());
         msg.destid(dest);
-        msg.sendid(id());
-        msg.receiveid(AODV_BROADCAST_ADDRESS);
         msg.msg_type(AODV_MESSAGE);
         ad_hoc_aodv_rreq rreq{AODV_RREQ, 0, this->aodv_rreq_id, dest, dest_seq, id(), this->aodv_seq};
         msg.body_length(sizeof(rreq));
         memcpy(msg.body(), &rreq, msg.body_length());
-        write(msg);
+        broadcast_rreq(msg, rreq);
         //启动一个定时器，记录rreq在缓存中的存活时间，在存活时间之内的相同source和id的rreq都会被丢弃
         auto timer = rreq_buffer.new_timer(io_context, id(), rreq.id);
         timer->async_wait(boost::bind(&ad_hoc_client::aodv_path_discovery_timeout, this, id(), rreq.id));
@@ -547,30 +561,43 @@ private:
     void send_rerr(int dest, int dest_seq) {
         dest_seq += 1;
         ad_hoc_message msg;
-        msg.sendid(id());
-        msg.receiveid(AODV_BROADCAST_ADDRESS);
-        msg.sourceid(id());
-        msg.destid(AODV_BROADCAST_ADDRESS);
         ad_hoc_aodv_rerr rerr{AODV_RERR, dest, dest_seq};
         msg.body_length(sizeof(rerr));
         msg.msg_type(AODV_MESSAGE);
         memcpy(msg.body(), &rerr, msg.body_length());
         msg.encode_header();
-        write(msg);
+        broadcast_rerr(msg);
+//        write(msg);
     }
 
     void send_hello() {
-        ad_hoc_message msg;
-        msg.sendid(id());
-        msg.receiveid(AODV_BROADCAST_ADDRESS);
-        msg.sourceid(id());
-        msg.destid(AODV_BROADCAST_ADDRESS);
-        ad_hoc_aodv_hello hello{AODV_HELLO};
-        msg.body_length(sizeof(hello));
-        msg.msg_type(AODV_MESSAGE);
-        memcpy(msg.body(), &hello, msg.body_length());
-        msg.encode_header();
-        write(msg);
+        if (neighbors.empty()) {
+            ad_hoc_message msg;
+            msg.sendid(id());
+            msg.receiveid(AODV_BROADCAST_ADDRESS);
+            msg.sourceid(id());
+            msg.destid(AODV_BROADCAST_ADDRESS);
+            ad_hoc_aodv_hello hello{AODV_HELLO};
+            msg.body_length(sizeof(hello));
+            msg.msg_type(AODV_MESSAGE);
+            memcpy(msg.body(), &hello, msg.body_length());
+            msg.encode_header();
+            write(msg);
+        } else {
+            for (auto neighbor: neighbors.neighbor_timer_map) {
+                ad_hoc_message msg;
+                msg.sendid(id());
+                msg.receiveid(neighbor.first);
+                msg.sourceid(id());
+                msg.destid(neighbor.first);
+                ad_hoc_aodv_hello hello{AODV_HELLO};
+                msg.body_length(sizeof(hello));
+                msg.msg_type(AODV_MESSAGE);
+                memcpy(msg.body(), &hello, msg.body_length());
+                msg.encode_header();
+                write(msg);
+            }
+        }
 
         hello_timer.expires_from_now(boost::posix_time::seconds(AODV_HELLO_INTERVAL));
         hello_timer.async_wait(boost::bind(&ad_hoc_client::send_hello, this));
