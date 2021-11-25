@@ -31,6 +31,14 @@ public:
 
     }
 
+    ad_hoc_message(int type, int sendid, int receiveid, int src, int dst) {
+        msg_type_ = type;
+        send_id = sendid;
+        receive_id = receiveid;
+        source_id = src;
+        dest_id = dst;
+    }
+
     /**
      * 字节数组的首地址，也是消息首部的首地址
      *
@@ -38,6 +46,13 @@ public:
      */
     char *data() {
         return data_;
+    }
+
+    template<class T>
+    void body(T body) {
+        body_length(sizeof(T));
+        memcpy(data_, &body, body_length_);
+        encode_header();
     }
 
     /**

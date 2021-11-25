@@ -94,15 +94,15 @@ public:
 
     }
 
-    void handle_message(ad_hoc_message &msg, bool not_to_wormhole) {
+    void handle_message(ad_hoc_message &msg, bool through_wormhole) {
 #if DEBUG
         cout << "handle" << endl;
         print(msg);
 #endif
         if (msg.msg_type() == AODV_MESSAGE) {
-            handle_adov_message(msg, not_to_wormhole);
+            handle_adov_message(msg, through_wormhole);
         } else {
-            handle_user_message(msg, not_to_wormhole);
+            handle_user_message(msg, through_wormhole);
         }
     }
 
@@ -249,13 +249,13 @@ private:
         }
     }
 
-    void handle_user_message(ad_hoc_message msg, bool not_to_wormhole) {
+    void handle_user_message(ad_hoc_message msg, bool through_wormhole) {
         if (id() == msg.destid()) {
 #if DEBUG
             cout.write(read_msg_.body(), read_msg_.body_length());
             cout << endl;
 #endif
-        } else if (wormhole != -1 && !not_to_wormhole) {
+        } else if (wormhole != -1 && !through_wormhole) {
             write_to_wormhole(msg);
         } else {
             //转发消息给下一跳
@@ -269,19 +269,19 @@ private:
         }
     }
 
-    void handle_adov_message(ad_hoc_message &msg, bool not_to_wormhole) {
+    void handle_adov_message(ad_hoc_message &msg, bool through_wormhole) {
         int *aodv_type = (int *) msg.body();
         if (*aodv_type == AODV_RREQ) {
             auto rreq = (ad_hoc_aodv_rreq *) msg.body();
-            handle_rreq(msg, *rreq, not_to_wormhole);
+            handle_rreq(msg, *rreq, through_wormhole);
         } else if (*aodv_type == AODV_RREP) {
             auto rrep = (ad_hoc_aodv_rrep *) msg.body();
-            handle_rrep(msg, *rrep, not_to_wormhole);
+            handle_rrep(msg, *rrep, through_wormhole);
         } else if (*aodv_type == AODV_RERR) {
             auto rerr = (ad_hoc_aodv_rerr *) msg.body();
-            handle_rerr(msg, *rerr, not_to_wormhole);
+            handle_rerr(msg, *rerr, through_wormhole);
         } else if (*aodv_type == AODV_HELLO) {
-            handle_hello(msg, not_to_wormhole);
+            handle_hello(msg, through_wormhole);
         } else if (*aodv_type == AODV_BACK) {
             auto back = (ad_hoc_aodv_back *) msg.body();
             handle_back(msg, *back);
@@ -305,8 +305,17 @@ private:
      * @param msg
      * @param rreq
      */
-    void handle_rreq(ad_hoc_message &msg, ad_hoc_aodv_rreq &rreq, bool not_to_wormhole) {
-        int hops = rreq.hops + 1;
+    void handle_rreq(ad_hoc_message &msg, ad_hoc_aodv_rreq &rreq, bool through_wormhole) {
+        if (id() == rreq.orig) {
+            return;
+        }
+
+        int current_hops;
+        if (through_wormhole) {
+            current_hops = rreq.hops;
+        } else {
+            current_hops = rreq.hops + 1;
+        }
 
         //建立反向路由，便于反传rrep
         if (routing_table_.contains(rreq.orig)) {
@@ -316,9 +325,9 @@ private:
                 orig_route.seq = rreq.orig_seq;
                 aodv_restart_route_timer(orig_route);
             } else if (orig_route.seq == rreq.orig_seq) {
-                if (orig_route.hops > hops) {
+                if (orig_route.hops > current_hops) {
                     //更新路由表下一跳
-                    orig_route.hops = hops;
+                    orig_route.hops = current_hops;
                     orig_route.next_hop = msg.sendid();
                     aodv_restart_route_timer(orig_route);
                 }
@@ -327,7 +336,7 @@ private:
                 aodv_restart_route_timer(orig_route);
             }
         } else {
-            ad_hoc_client_routing_table_item route{rreq.orig, msg.sendid(), rreq.orig_seq, hops,
+            ad_hoc_client_routing_table_item route{rreq.orig, msg.sendid(), rreq.orig_seq, current_hops,
                                                    make_shared<boost::asio::deadline_timer>(io_context,
                                                                                             boost::posix_time::seconds(
                                                                                                     AODV_ACTIVE_ROUTE_TIMEOUT))};
@@ -354,10 +363,22 @@ private:
         if (routing_table_.contains(rreq.dest)) {
             auto dest_route = routing_table_.route(rreq.dest);
             if (dest_route.seq >= rreq.dest_seq) {
-                send_rrep(rreq.orig, rreq.dest, dest_route.seq, dest_route.hops, msg.sendid());
+                if (wormhole != -1 && through_wormhole) {
+                    //若rreq来自虫洞，则向虫洞返回rrep
+                    ad_hoc_aodv_rrep rrep{AODV_RREP, dest_route.hops, rreq.dest, dest_route.seq, rreq.orig};
+                    ad_hoc_message wrap_msg(AODV_MESSAGE, id(), msg.sendid(), id(), rreq.orig);
+                    wrap_msg.body_length(sizeof(rrep));
+                    memcpy(wrap_msg.body(), &rrep, wrap_msg.body_length());
+                    wrap_msg.encode_header();
+                    write_to_wormhole(wrap_msg);
+                } else {
+                    send_rrep(rreq.orig, rreq.dest, dest_route.seq, dest_route.hops, msg.sendid());
+                }
             }
         } else {
-            if (wormhole != -1 && !not_to_wormhole) {
+            if (wormhole != -1 && !through_wormhole) {
+                rreq.hops += 1;
+                msg.body(rreq);
                 write_to_wormhole(msg);
             } else {
                 rreq.hops += 1;
@@ -366,9 +387,13 @@ private:
         }
     }
 
-    void handle_rrep(ad_hoc_message &msg, ad_hoc_aodv_rrep &rrep, bool not_to_wormhole) {
-        int hops = rrep.hops + 1;
-        rrep.hops = hops;
+    void handle_rrep(ad_hoc_message &msg, ad_hoc_aodv_rrep &rrep, bool through_wormhole) {
+        int current_hops;
+        if (through_wormhole) {
+            current_hops = rrep.hops;
+        } else {
+            current_hops = rrep.hops + 1;
+        }
 
         if (watchdog.is_wormhole(msg.sendid())) {
             return;
@@ -378,12 +403,14 @@ private:
             if (routing_table_.contains((rrep.dest))) {
                 auto dest_route = routing_table_.route(rrep.dest);
                 int dest_route_hops = dest_route.hops;
-                if (dest_route_hops > hops) {
-                    dest_route.hops = hops;
+                if (dest_route_hops > current_hops) {
+                    dest_route.hops = current_hops;
+                    dest_route.next_hop = msg.sendid();
+                    routing_table_.insert(dest_route);
                     aodv_restart_route_timer(routing_table_.route(rrep.dest));
                 }
             } else {
-                ad_hoc_client_routing_table_item route{rrep.dest, msg.sendid(), rrep.dest_seq, hops,
+                ad_hoc_client_routing_table_item route{rrep.dest, msg.sendid(), rrep.dest_seq, current_hops,
                                                        make_shared<boost::asio::deadline_timer>(io_context,
                                                                                                 boost::posix_time::seconds(
                                                                                                         AODV_ACTIVE_ROUTE_TIMEOUT))};
@@ -405,7 +432,7 @@ private:
                 dest_route.seq = rrep.dest_seq;
                 aodv_restart_route_timer(dest_route);
             } else {
-                ad_hoc_client_routing_table_item route{rrep.dest, msg.sendid(), rrep.dest_seq, hops,
+                ad_hoc_client_routing_table_item route{rrep.dest, msg.sendid(), rrep.dest_seq, current_hops,
                                                        make_shared<boost::asio::deadline_timer>(io_context,
                                                                                                 boost::posix_time::seconds(
                                                                                                         AODV_ACTIVE_ROUTE_TIMEOUT))};
@@ -413,7 +440,9 @@ private:
                 aodv_restart_route_timer(routing_table_.route(rrep.dest));
             }
 
-            if (wormhole != -1 && !not_to_wormhole) {
+            if (wormhole != -1 && !through_wormhole) {
+                rrep.hops += 1;
+                msg.body(rrep);
                 write_to_wormhole(msg);
             } else {
                 auto route = routing_table_.route(rrep.orig);
@@ -424,7 +453,7 @@ private:
         routing_table_.print();
     }
 
-    void handle_rerr(ad_hoc_message &msg, ad_hoc_aodv_rerr &rerr, bool not_to_wormhole) {
+    void handle_rerr(ad_hoc_message &msg, ad_hoc_aodv_rerr &rerr, bool through_wormhole) {
         if (id() == rerr.dest) {
             return;
         }
@@ -432,13 +461,17 @@ private:
             auto dest_route = routing_table_.route(rerr.dest);
             if (dest_route.next_hop == msg.sendid()) {
                 routing_table_.remove(rerr.dest);
-                broadcast_rerr(msg);
+                if (wormhole != -1 && !through_wormhole) {
+                    write_to_wormhole(msg);
+                } else {
+                    broadcast_rerr(msg);
+                }
                 routing_table_.print();
             }
         }
     }
 
-    void handle_hello(ad_hoc_message &msg, bool not_to_wormhole) {
+    void handle_hello(ad_hoc_message &msg, bool through_wormhole) {
         int neighbor = msg.sendid();
         neighbors.print();
         if (this->neighbors.contains(neighbor)) {
@@ -480,6 +513,8 @@ private:
             memcpy(msg.body(), &rreq, msg.body_length());
             msg.sendid(id());
             msg.receiveid(AODV_BROADCAST_ADDRESS);
+            msg.sourceid(id());
+            msg.destid(AODV_BROADCAST_ADDRESS);
             msg.encode_header();
             write(msg);
             return;
@@ -488,6 +523,8 @@ private:
             memcpy(msg.body(), &rreq, msg.body_length());
             msg.sendid(id());
             msg.receiveid(neighbor.first);
+            msg.sourceid(id());
+            msg.destid(neighbor.first);
             msg.encode_header();
             write(msg);
         }
@@ -504,12 +541,16 @@ private:
         if (neighbors.neighbor_timer_map.empty()) {
             msg.sendid(id());
             msg.receiveid(AODV_BROADCAST_ADDRESS);
+            msg.sourceid(id());
+            msg.destid(AODV_BROADCAST_ADDRESS);
             write(msg);
             return;
         }
         for (auto neighbor: neighbors.neighbor_timer_map) {
             msg.sendid(id());
             msg.receiveid(neighbor.first);
+            msg.sourceid(id());
+            msg.destid(neighbor.first);
             write(msg);
         }
     }
@@ -523,6 +564,8 @@ private:
             memcpy(broadcast_msg.body(), &back, broadcast_msg.body_length());
             broadcast_msg.sendid(id());
             broadcast_msg.receiveid(neighbor.first);
+            broadcast_msg.sourceid(id());
+            broadcast_msg.destid(neighbor.first);
             broadcast_msg.encode_header();
             write(broadcast_msg);
         }

@@ -8,7 +8,7 @@
 #include "message.h"
 
 #define DEBUG true
-#define DYNAMIC false
+#define DYNAMIC true
 
 void print_time() {
     time_t now = time(nullptr);
@@ -19,6 +19,9 @@ void print_time() {
 }
 
 void print(ad_hoc_message &msg) {
+    if (msg.msg_type() == AODV_MESSAGE && *(int *) (msg.body()) == AODV_HELLO) {
+        return;
+    }
     print_time();
     if (msg.msg_type() == ORDINARY_MESSAGE) {
         cout << "[message] src: " << msg.sourceid() << ", dst: " << msg.destid() << ", sender: " << msg.sendid()
