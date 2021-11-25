@@ -126,8 +126,8 @@ public:
     bool deliver(ad_hoc_message msg) {
         if (wormhole_channel) {
 #if DEBUG
-            cout << "deliver through wormhole" << endl;
-            print(msg);
+//            cout << "deliver through wormhole" << endl;
+//            print(msg);
 #endif
             int dest_i;
             if (msg.sendid() == node[0]) {
@@ -139,8 +139,8 @@ public:
         } else if (msg.receiveid() == AODV_BROADCAST_ADDRESS) {
             //一跳范围内广播
 #if DEBUG
-            cout << "broadcasting" << endl;
-            print(msg);
+//            cout << "broadcasting" << endl;
+//            print(msg);
 #endif
             boost::asio::deadline_timer timer(io_context);
             timer.expires_from_now(boost::posix_time::millisec(100));
@@ -151,8 +151,8 @@ public:
             if (judge_deliver(msg))       //根据网络拓扑图判断是否能转发信息
             {
 #if DEBUG
-                cout << "sending" << endl;
-                print(msg);
+//                cout << "sending" << endl;
+//                print(msg);
 #endif
                 boost::asio::deadline_timer timer(io_context);
                 timer.expires_from_now(boost::posix_time::millisec(100));
@@ -279,7 +279,7 @@ public:
     void handle_read_body(const boost::system::error_code &error) {
         if (!error) {
 #if DEBUG
-            cout << "received" << endl;
+//            cout << "received" << endl;
             print(read_msg_);
 #endif
             //由scope去查询该message里的目的ID，进行消息转发。
