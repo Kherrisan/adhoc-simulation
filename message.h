@@ -51,7 +51,7 @@ public:
     template<class T>
     void body(T body) {
         body_length(sizeof(T));
-        memcpy(data_, &body, body_length_);
+        memcpy(data_ + ADHOCMESSAGE_HEADER_LENGTH, &body, body_length_);
         encode_header();
     }
 

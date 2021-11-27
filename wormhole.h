@@ -16,8 +16,7 @@
 #include "message_handler.h"
 #include "utils.h"
 
-const int AODV_WORMHOLE_DIFF_THRESHOLD = 3;
-const int AODV_WORMHOLE_WATCHDOG_TIMEOUT = 10;
+const int AODV_WORMHOLE_DIFF_THRESHOLD = 2;
 
 using boost::asio::ip::tcp;
 using namespace std;
@@ -26,51 +25,86 @@ using namespace std;
 typedef deque<ad_hoc_message> ad_hoc_message_queue;
 
 struct ad_hoc_wormhole_watchdog_item {
-    //input-output
+    //input-output(rx-tx)
     int diff;
-    timer_ptr timer;
 };
 
 class ad_hoc_wormhole_watchdog {
 public:
-    ad_hoc_wormhole_watchdog_item &start_watching(boost::asio::io_context &io_context, int neighbor) {
-        neighbor_diff_map[neighbor] = ad_hoc_wormhole_watchdog_item{0,
-                                                                    make_shared<boost::asio::deadline_timer>(
-                                                                            io_context)};
-        return neighbor_diff_map[neighbor];
+    void handle_back(ad_hoc_aodv_back &back, ad_hoc_client_routing_table &routing_table) {
+        if (back.receiver != back.msg_dest) {
+            increment_rx(back.receiver);
+        }
+        if (back.sender != back.msg_src) {
+            increment_tx(back.sender);
+        }
+#if DEBUG
+        print();
+#endif
+        check(back.receiver, routing_table);
+        check(back.sender, routing_table);
     }
 
-    timer_ptr reset_watching(int neighbor) {
-        auto timer = neighbor_diff_map[neighbor].timer;
-        timer->expires_from_now(boost::posix_time::seconds(AODV_WORMHOLE_WATCHDOG_TIMEOUT));
-        return timer;
+    void check(int id, ad_hoc_client_routing_table &routing_table) {
+        if (neighbor_diff_map[id].diff < -AODV_WORMHOLE_DIFF_THRESHOLD) {
+            //rx-tx<0，收的少发的多
+            cout << "found a wormhole node: " << id << endl;
+            routing_table.remove_by_next(id);
+        } else if (neighbor_diff_map[id].diff > AODV_WORMHOLE_DIFF_THRESHOLD) {
+            //rx-tx>0，收的多发的少
+            cout << "found a blackhole node: " << id << endl;
+            routing_table.remove_by_next(id);
+        }
     }
 
     void increment_rx(int neighbor) {
+        if (neighbor_diff_map.find(neighbor) == neighbor_diff_map.end()) {
+            neighbor_diff_map[neighbor] = ad_hoc_wormhole_watchdog_item{0};
+        }
         neighbor_diff_map[neighbor].diff++;
+#if DEBUG
+        print();
+#endif
     }
 
     void increment_tx(int neighbor) {
+        if (neighbor_diff_map.find(neighbor) == neighbor_diff_map.end()) {
+            neighbor_diff_map[neighbor] = ad_hoc_wormhole_watchdog_item{0};
+        }
         neighbor_diff_map[neighbor].diff--;
+#if DEBUG
+        print();
+#endif
     }
 
-    bool is_wormhole(int neighbor) {
-        if (std::find(wormhole_list.begin(), wormhole_list.end(), neighbor) != wormhole_list.end()) {
-            return true;
+    bool is_malicious(int neighbor) {
+        return neighbor_diff_map.find(neighbor) != neighbor_diff_map.end() &&
+               (neighbor_diff_map[neighbor].diff > AODV_WORMHOLE_DIFF_THRESHOLD ||
+                neighbor_diff_map[neighbor].diff < -AODV_WORMHOLE_DIFF_THRESHOLD);
+    }
+
+    void print() {
+        cout << "watchdog" << endl;
+        for (int i = 0; i < 20; i++) {
+            cout << "-";
         }
-        if (neighbor_diff_map.find(neighbor) == neighbor_diff_map.end()) {
-            return false;
+        cout << endl;
+        cout << right
+             << setw(10) << "neighbor" << "|"
+             << setw(10) << "rx-tx" << "|"
+             << endl;
+        for (int i = 0; i < 20; i++) {
+            cout << "-";
         }
-        if (neighbor_diff_map[neighbor].diff > AODV_WORMHOLE_DIFF_THRESHOLD) {
-            wormhole_list.push_back(neighbor);
-            return true;
+        cout << endl;
+        for (auto itr = neighbor_diff_map.begin(); itr != neighbor_diff_map.end(); itr++) {
+            cout << setw(10) << itr->first << "|" << setw(10) << itr->second.diff << "|" << endl;
         }
-        return false;
+        cout << endl;
     }
 
 private:
     unordered_map<int, ad_hoc_wormhole_watchdog_item> neighbor_diff_map;
-    vector<int> wormhole_list;
 };
 
 
@@ -165,8 +199,7 @@ private:
     void handle_read_body(const boost::system::error_code &error) {
         if (!error) {
 #if DEBUG
-            cout << "received" << endl;
-            print(read_msg_);
+            LOG_RECEIVED(read_msg_);
 #endif
             ad_hoc_message body_msg;
             memcpy(body_msg.data(), read_msg_.body(), read_msg_.body_length());
@@ -192,8 +225,8 @@ private:
         if (!error) {
             auto msg = write_msgs_.front();
 #if DEBUG
-            cout << "sent" << endl;
-            print(msg);
+            //            cout << "sent" << endl;
+            //            print(msg);
 #endif
             write_msgs_.pop_front();
             if (!write_msgs_.empty()) {
@@ -218,8 +251,7 @@ private:
      */
     void do_write(ad_hoc_message msg) {
 #if DEBUG
-        cout << "sending" << endl;
-        print(msg);
+        LOG_SENDING(msg);
 #endif
         msg.sendid(socket.local_endpoint().port());
         msg.encode_header();
@@ -238,7 +270,6 @@ private:
     void do_close() {
         socket.close();
     }
-
 
     boost::asio::io_context &io_context;
     tcp::socket socket;

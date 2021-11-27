@@ -155,7 +155,7 @@ public:
 //                print(msg);
 #endif
                 boost::asio::deadline_timer timer(io_context);
-                timer.expires_from_now(boost::posix_time::millisec(100));
+                timer.expires_from_now(boost::posix_time::millisec(200));
                 timer.async_wait(boost::bind(&ad_hoc_scope::deliver, this, msg.receiveid(), msg));
 //                session_map[msg.receiveid()]->deliver(msg);    //调用ID号对应的session去发送信息
                 return true;
@@ -198,6 +198,15 @@ public:
                             {0, 0, 0, 0, 1, 1, 1, 0},
                             {0, 0, 0, 1, 0, 1, 1, 0},
                             {1, 0, 0, 0, 0, 0, 0, 1}};
+
+//    int matrix[MAX][MAX] = {{1, 1, 1, 0, 0, 0, 0, 0},
+//                            {1, 1, 0, 0, 0, 0, 0, 0},
+//                            {1, 0, 1, 1, 0, 0, 0, 0},
+//                            {0, 0, 1, 1, 0, 0, 0, 0},
+//                            {0, 0, 0, 0, 1, 0, 0, 0},
+//                            {0, 0, 0, 0, 0, 1, 0, 0},
+//                            {0, 0, 0, 0, 0, 0, 1, 0},
+//                            {0, 0, 0, 0, 0, 0, 0, 1}};
 private:
     unordered_map<int, ad_hoc_participant_ptr> session_map;
     int node[MAX];
@@ -279,8 +288,7 @@ public:
     void handle_read_body(const boost::system::error_code &error) {
         if (!error) {
 #if DEBUG
-//            cout << "received" << endl;
-            print(read_msg_);
+            LOG_RECEIVED(read_msg_);
 #endif
             //由scope去查询该message里的目的ID，进行消息转发。
             scope.deliver(read_msg_);

@@ -11,7 +11,6 @@
 #include <boost/bind/bind.hpp>
 #include <boost/shared_ptr.hpp>
 #include <boost/asio.hpp>
-#include "unordered_map"
 
 #include "message.h"
 #include "aodv.h"
@@ -28,7 +27,7 @@ const int AODV_HELLO_INTERVAL = 10;
 const int AODV_ACTIVE_ROUTE_TIMEOUT = 300;
 
 
-class ad_hoc_client : public ad_hoc_message_handler {
+class bh_client : public ad_hoc_message_handler {
 public:
     /**
     * ad_hoc_client 构造函数
@@ -41,22 +40,26 @@ public:
     * @param io_context 接收数据的IO事件循环
     */
 
-    ad_hoc_client(tcp::endpoint &endpoint, boost::asio::io_context &io_context, int id, int another_wormhole)
+    bh_client(tcp::endpoint &endpoint, boost::asio::io_context &io_context, int id, int another_wormhole)
             : socket(io_context),
               io_context(io_context),
               hello_timer(io_context, boost::posix_time::seconds(AODV_HELLO_INTERVAL)),
               wormhole(another_wormhole) {
-        aodv_seq = 0;
-        aodv_rreq_id = 0;
         //第一个参数指向某个IP主机的IP端口，第二个是偏函数对象，实际代码地址指向成员函数handle_connect
+
         socket.open(boost::asio::ip::tcp::v4());
         socket.bind(tcp::endpoint(
                 boost::asio::ip::address::from_string("127.0.0.1"),
                 id
         ));
+
+
+        aodv_seq = 0;
+        aodv_rreq_id = 0;
+
         socket.async_connect(endpoint,
                              boost::bind(
-                                     &ad_hoc_client::handle_connect,
+                                     &bh_client::handle_connect,
                                      this,
                                      boost::asio::placeholders::error));
         if (wormhole != -1) {
@@ -73,15 +76,11 @@ public:
         * @param msg 待发消息
         */
     void write(const ad_hoc_message msg) {
-        if (wormhole == -1 && watchdog.is_malicious(msg.receiveid())) {
-            return;
-        }
-        io_context.post(boost::bind(&ad_hoc_client::do_write, this, msg));
+        io_context.post(boost::bind(&bh_client::do_write, this, msg));
     }
 
     void write_to_wormhole(ad_hoc_message &msg) {
         ad_hoc_message wormhole_msg;
-        msg.sourceid(id());
         wormhole_msg.body_length(msg.length());
         wormhole_msg.msg_type(WORMHOLE_MESSAGE);
         memcpy(wormhole_msg.body(), msg.data(), msg.length());
@@ -90,44 +89,26 @@ public:
     }
 
     void close() {
-        io_context.post(boost::bind(&ad_hoc_client::do_close, this));
+        io_context.post(boost::bind(&bh_client::do_close, this));
     }
 
     int get_sent_id() {
         return socket.local_endpoint().port();
     }
 
-    ~ad_hoc_client() {
+    ~bh_client() {
 
     }
 
     void handle_message(ad_hoc_message &msg, bool through_wormhole) {
-        if (wormhole == -1 && watchdog.is_malicious(msg.sendid())) {
-            return;
-        }
 #if DEBUG
-        LOG_HANDLE(msg);
+        print("handle", msg);
 #endif
         if (msg.msg_type() == AODV_MESSAGE) {
             handle_adov_message(msg, through_wormhole);
         } else {
-#if !DEBUG
-            LOG_HANDLE(msg);
-#endif
             handle_user_message(msg, through_wormhole);
         }
-    }
-
-    void send_user_message(int dest, const char *text, int len) {
-        ad_hoc_message msg;
-        msg.msg_type(ORDINARY_MESSAGE);
-        msg.body_length(len);
-        memcpy(msg.body(), text, len);
-        msg.destid(dest);
-        msg.sourceid(id());
-        msg.sendid(id());
-        msg.encode_header();
-        write(msg);
     }
 
 private:
@@ -145,7 +126,7 @@ private:
             cout << "local port is " << socket.local_endpoint().port() << endl;
             boost::asio::async_read(socket,
                                     boost::asio::buffer(read_msg_.data(), ADHOCMESSAGE_HEADER_LENGTH),
-                                    boost::bind(&ad_hoc_client::handle_read_header, this,
+                                    boost::bind(&bh_client::handle_read_header, this,
                                                 boost::asio::placeholders::error));
 #if DYNAMIC
             send_hello();
@@ -165,7 +146,7 @@ private:
         if (!error && read_msg_.decode_header()) {
             boost::asio::async_read(socket,
                                     boost::asio::buffer(read_msg_.body(), read_msg_.body_length()),
-                                    boost::bind(&ad_hoc_client::handle_read_body,
+                                    boost::bind(&bh_client::handle_read_body,
                                                 this,
                                                 boost::asio::placeholders::error));
         } else {
@@ -182,12 +163,13 @@ private:
     void handle_read_body(const boost::system::error_code &error) {
         if (!error) {
 #if DEBUG
-            LOG_RECEIVED(read_msg_);
+            print("received", read_msg_);
+            routing_table_.print();
 #endif
             handle_message(read_msg_, false);
             boost::asio::async_read(socket,
                                     boost::asio::buffer(read_msg_.data(), ADHOCMESSAGE_HEADER_LENGTH),
-                                    boost::bind(&ad_hoc_client::handle_read_header,
+                                    boost::bind(&bh_client::handle_read_header,
                                                 this,
                                                 boost::asio::placeholders::error));
         } else {
@@ -205,23 +187,23 @@ private:
         if (!error) {
             auto msg = write_msgs_.front();
 #if DEBUG
-            //            cout << "sent" << endl;
-            //            print_time();
-            //            print_message(msg);
-            //            if (msg.msg_type() == ORDINARY_MESSAGE) {
-            //                cout.write(msg.body(), msg.body_length());
-            //                cout << endl;
-            //            } else {
-            //                print_aodv(msg.body());
-            //            }
-            //            cout << endl;
+            cout << "sent" << endl;
+            print_time();
+            print_message(msg);
+            if (msg.msg_type() == ORDINARY_MESSAGE) {
+                cout.write(msg.body(), msg.body_length());
+                cout << endl;
+            } else {
+                print_aodv(msg.body());
+            }
+            cout << endl;
 #endif
             write_msgs_.pop_front();
             if (!write_msgs_.empty()) {
                 boost::asio::async_write(socket,
                                          boost::asio::buffer(write_msgs_.front().data(),
                                                              write_msgs_.front().length()),
-                                         boost::bind(&ad_hoc_client::handle_write,
+                                         boost::bind(&bh_client::handle_write,
                                                      this,
                                                      boost::asio::placeholders::error));
             }
@@ -238,12 +220,7 @@ private:
         * @param msg
         */
     void do_write(ad_hoc_message msg) {
-        if (wormhole == -1 && watchdog.is_malicious(msg.receiveid())) {
-            return;
-        }
-//        if ((routing_table_.contains(msg.destid()) && trust_list[routing_table_.route(msg.destid()).next_hop]) ||
-        if (routing_table_.contains(msg.destid()) ||
-            msg.receiveid() == AODV_BROADCAST_ADDRESS) {
+        if (routing_table_.contains(msg.destid()) || msg.receiveid() == AODV_BROADCAST_ADDRESS) {
             if (routing_table_.contains(msg.destid())) {
                 auto route = routing_table_.route(msg.destid());
                 //重新启动该路由表项的定时器
@@ -253,19 +230,15 @@ private:
             msg.sendid(id());
             msg.encode_header();
 #if DEBUG
-            LOG_SENDING(msg);
+            print("sending", msg);
 #endif
             bool write_in_progress = !write_msgs_.empty();
             write_msgs_.push_back(msg);
             if (!write_in_progress) {
-                if (msg.msg_type() == ORDINARY_MESSAGE) {
-                    broadcast_back(msg);
-                    trust_list[routing_table_.route(msg.destid()).next_hop] = false;
-                }
                 boost::asio::async_write(socket,
                                          boost::asio::buffer(write_msgs_.front().data(),
                                                              write_msgs_.front().length()),
-                                         boost::bind(&ad_hoc_client::handle_write,
+                                         boost::bind(&bh_client::handle_write,
                                                      this,
                                                      boost::asio::placeholders::error));
             }
@@ -274,7 +247,7 @@ private:
             auto timer = msg_buffer.new_timer(io_context, msg);
             timer->expires_from_now(boost::posix_time::seconds(AODV_MESSAGE_WAITING_ROUTE_TIMEOUT));
             timer->async_wait(
-                    boost::bind(&ad_hoc_client::aodv_msg_waiting_route_timeout, this, msg,
+                    boost::bind(&bh_client::aodv_msg_waiting_route_timeout, this, msg,
                                 boost::asio::placeholders::error));
         }
     }
@@ -286,17 +259,8 @@ private:
             cout.write(read_msg_.body(), read_msg_.body_length());
             cout << endl;
 #endif
-        } else if (wormhole != -1 && !through_wormhole) {
-            write_to_wormhole(msg);
         } else {
-            //转发消息给下一跳
-            auto route = routing_table_.route(msg.destid());
-            aodv_restart_route_timer(route);
-            msg.sendid(id());
-            msg.receiveid(route.next_hop);
-            msg.encode_header();
-            write(msg);
-            broadcast_back(msg);
+            cout << "Intercept success!" << endl;
         }
     }
 
@@ -313,23 +277,20 @@ private:
             handle_rerr(msg, *rerr, through_wormhole);
         } else if (*aodv_type == AODV_HELLO) {
             handle_hello(msg, through_wormhole);
-        } else if (*aodv_type == AODV_BACK && wormhole == -1) {
+        } else if (*aodv_type == AODV_BACK) {
             auto back = (ad_hoc_aodv_back *) msg.body();
-            watchdog.handle_back(*back, routing_table_);
-        } else if (*aodv_type == AODV_ARC) {
-            auto arc = (ad_hoc_aodv_arc *) msg.body();
-            handle_arc(msg, *arc);
+            handle_back(msg, *back);
         }
     }
 
     void aodv_restart_route_timer(ad_hoc_client_routing_table_item item) {
-#if DYNAMIC && AODV_ROUTE_TIMEOUT
+#if DYNAMIC
         if (item.timer == nullptr) {
             item.timer = make_shared<boost::asio::deadline_timer>(io_context);
         }
         item.timer->expires_from_now(boost::posix_time::seconds(AODV_ACTIVE_ROUTE_TIMEOUT));
         item.timer->async_wait(
-                boost::bind(&ad_hoc_client::aodv_route_timeout, this, item, boost::asio::placeholders::error));
+                boost::bind(&bh_client::aodv_route_timeout, this, item, boost::asio::placeholders::error));
 #endif
     }
 
@@ -346,29 +307,16 @@ private:
 
         int current_hops;
         if (through_wormhole) {
-            current_hops = rreq.hops;
+            current_hops = 1;
         } else {
-            current_hops = rreq.hops + 1;
+            current_hops = 1;
         }
 
         //建立反向路由，便于反传rrep
         if (routing_table_.contains(rreq.orig)) {
             auto orig_route = routing_table_.route(rreq.orig);
-            if (orig_route.seq < rreq.orig_seq) {
-                //更新路由表中的seq
-                orig_route.seq = rreq.orig_seq;
-                aodv_restart_route_timer(orig_route);
-            } else if (orig_route.seq == rreq.orig_seq) {
-                if (orig_route.hops > current_hops) {
-                    //更新路由表下一跳
-                    orig_route.hops = current_hops;
-                    orig_route.next_hop = msg.sendid();
-                    aodv_restart_route_timer(orig_route);
-                }
-            } else if (orig_route.seq == -1) {
-                orig_route.seq = rreq.orig_seq;
-                aodv_restart_route_timer(orig_route);
-            }
+            orig_route.seq = rreq.orig_seq;
+            aodv_restart_route_timer(orig_route);
         } else {
             ad_hoc_client_routing_table_item route{rreq.orig, msg.sendid(), rreq.orig_seq, current_hops,
                                                    make_shared<boost::asio::deadline_timer>(io_context,
@@ -376,18 +324,14 @@ private:
                                                                                                     AODV_ACTIVE_ROUTE_TIMEOUT))};
             routing_table_.insert(route);
             aodv_restart_route_timer(route);
-            trust_list[route.next_hop] = true;
         }
-
-#if DEBUG
-
-#endif
+        routing_table_.print();
 
         if (rreq_buffer.contains(rreq.orig, rreq.id)) {
             return;
         } else {
             auto timer = this->rreq_buffer.new_timer(io_context, rreq.orig, rreq.id);
-            timer->async_wait(boost::bind(&ad_hoc_client::aodv_path_discovery_timeout, this, rreq.orig, rreq.id));
+            timer->async_wait(boost::bind(&bh_client::aodv_path_discovery_timeout, this, rreq.orig, rreq.id));
         }
 
         //到达目的节点，返回rrep
@@ -398,38 +342,20 @@ private:
         }
 
         //如果某个中间节点在路由表中查到了dest，且路由表中的seq大于（等于）rreq中的seq
+
         if (routing_table_.contains(rreq.dest)) {
             auto dest_route = routing_table_.route(rreq.dest);
-            if (dest_route.seq >= rreq.dest_seq) {
-                if (wormhole != -1 && through_wormhole) {
-                    //若rreq来自虫洞，则向虫洞返回rrep
-                    ad_hoc_aodv_rrep rrep{AODV_RREP, dest_route.hops, rreq.dest, dest_route.seq, rreq.orig};
-                    ad_hoc_message wrap_msg(AODV_MESSAGE, id(), msg.sendid(), id(), rreq.orig);
-                    wrap_msg.body_length(sizeof(rrep));
-                    memcpy(wrap_msg.body(), &rrep, wrap_msg.body_length());
-                    wrap_msg.encode_header();
-                    write_to_wormhole(wrap_msg);
-                } else {
-                    send_rrep(rreq.orig, rreq.dest, dest_route.seq, dest_route.hops, msg.sendid());
-                }
-            }
+            dest_route.seq = rreq.dest_seq;
+            send_rrep(rreq.orig, rreq.dest, dest_route.seq, dest_route.hops, msg.sendid());
         } else {
-            if (wormhole != -1) {
-                //此节点是虫洞节点
-                if (through_wormhole) {
-                    broadcast_rreq(msg, rreq);
-                } else {
-                    rreq.hops += 1;
-                    msg.body(rreq);
-                    write_to_wormhole(msg);
-                }
-            } else {
-                //此节点是普通节点
-                rreq.hops += 1;
-                msg.body(rreq);
-                broadcast_rreq(msg, rreq);
-            }
+            ad_hoc_client_routing_table_item route{rreq.dest, rreq.dest, rreq.orig_seq, 1,
+                                                   make_shared<boost::asio::deadline_timer>(io_context,
+                                                                                            boost::posix_time::seconds(
+                                                                                                    AODV_ACTIVE_ROUTE_TIMEOUT))};
+            routing_table_.insert(route);
+            send_rrep(rreq.orig, rreq.dest, rreq.orig_seq, 1, msg.sendid());
         }
+
     }
 
     void handle_rrep(ad_hoc_message &msg, ad_hoc_aodv_rrep &rrep, bool through_wormhole) {
@@ -448,7 +374,6 @@ private:
                     dest_route.hops = current_hops;
                     dest_route.next_hop = msg.sendid();
                     routing_table_.insert(dest_route);
-                    trust_list[dest_route.next_hop] = true;
                     aodv_restart_route_timer(routing_table_.route(rrep.dest));
                 }
             } else {
@@ -458,13 +383,13 @@ private:
                                                                                                         AODV_ACTIVE_ROUTE_TIMEOUT))};
                 routing_table_.insert(route);
                 aodv_restart_route_timer(route);
-                trust_list[route.next_hop] = true;
             }
 
-            for (auto msg = msg_buffer.msg_timer_map.begin(); msg != msg_buffer.msg_timer_map.end(); msg++) {
-                if (msg->first.destid() == rrep.dest) {
-                    write(msg->first);
-                    msg->second->cancel();
+            for (auto msg_itr = msg_buffer.msg_timer_map.begin();
+                 msg_itr != msg_buffer.msg_timer_map.end(); msg_itr++) {
+                if (msg_itr->first.destid() == rrep.dest) {
+                    write(msg_itr->first);
+                    msg_itr->second->cancel();
                 }
             }
 
@@ -479,34 +404,20 @@ private:
                                                                                                 boost::posix_time::seconds(
                                                                                                         AODV_ACTIVE_ROUTE_TIMEOUT))};
                 routing_table_.insert(route);
-                trust_list[route.next_hop] = true;
                 aodv_restart_route_timer(routing_table_.route(rrep.dest));
             }
 
-            if (wormhole != -1) {
-                //此节点是虫洞节点
-                if (through_wormhole) {
-                    //rrep从虫洞而来
-                    auto route = routing_table_.route(rrep.orig);
-                    forward_rrep(msg, route.next_hop);
-                } else {
-                    //rrep从普通路径而来，正要进入虫洞
-                    rrep.hops += 1;
-                    msg.body(rrep);
-                    write_to_wormhole(msg);
-                }
-            } else {
-                //此节点不是虫洞节点，正常操作
-                auto route = routing_table_.route(rrep.orig);
+            if (wormhole != -1 && !through_wormhole) {
                 rrep.hops += 1;
                 msg.body(rrep);
+                write_to_wormhole(msg);
+            } else {
+                auto route = routing_table_.route(rrep.orig);
                 forward_rrep(msg, route.next_hop);
             }
         }
 
-#if DEBUG
-
-#endif
+        routing_table_.print();
     }
 
     void handle_rerr(ad_hoc_message &msg, ad_hoc_aodv_rerr &rerr, bool through_wormhole) {
@@ -522,9 +433,7 @@ private:
                 } else {
                     broadcast_rerr(msg);
                 }
-#if DEBUG
-
-#endif
+                routing_table_.print();
             }
         }
     }
@@ -534,7 +443,7 @@ private:
         if (this->neighbors.contains(neighbor)) {
             auto timer = neighbors.timer(neighbor);
             timer->expires_from_now(boost::posix_time::seconds(AODV_HELLO_TIMEOUT));
-            timer->async_wait(boost::bind(&ad_hoc_client::aodv_neighbor_timeout, this, neighbor,
+            timer->async_wait(boost::bind(&bh_client::aodv_neighbor_timeout, this, neighbor,
                                           boost::asio::placeholders::error));
 
             auto route = routing_table_.route(neighbor);
@@ -542,7 +451,7 @@ private:
         } else {
             auto timer = this->neighbors.new_timer(io_context, neighbor);
             timer->expires_from_now(boost::posix_time::seconds(AODV_HELLO_TIMEOUT));
-            timer->async_wait(boost::bind(&ad_hoc_client::aodv_neighbor_timeout, this, neighbor,
+            timer->async_wait(boost::bind(&bh_client::aodv_neighbor_timeout, this, neighbor,
                                           boost::asio::placeholders::error));
 
             if (routing_table_.contains(neighbor)) {
@@ -554,18 +463,14 @@ private:
                                                                                                 boost::posix_time::seconds(
                                                                                                         AODV_ACTIVE_ROUTE_TIMEOUT))};
                 routing_table_.insert(route);
-                trust_list[route.next_hop] = true;
-#if DEBUG
-
-#endif
+                routing_table_.print();
                 aodv_restart_route_timer(route);
             }
         }
     }
 
-    void handle_arc(ad_hoc_message &msg, ad_hoc_aodv_arc &arc) {
-        cout << "send success in this hop" << endl;
-        trust_list[msg.sendid()] = true;
+    void handle_back(ad_hoc_message &msg, ad_hoc_aodv_back &back) {
+
     }
 
     void broadcast_rreq(ad_hoc_message &msg, ad_hoc_aodv_rreq &rreq) {
@@ -644,7 +549,7 @@ private:
         broadcast_rreq(msg, rreq);
         //启动一个定时器，记录rreq在缓存中的存活时间，在存活时间之内的相同source和id的rreq都会被丢弃
         auto timer = rreq_buffer.new_timer(io_context, id(), rreq.id);
-        timer->async_wait(boost::bind(&ad_hoc_client::aodv_path_discovery_timeout, this, id(), rreq.id));
+        timer->async_wait(boost::bind(&bh_client::aodv_path_discovery_timeout, this, id(), rreq.id));
     }
 
     void send_rrep(int orig, int dest, int dest_seq, int hops, int next_hop) {
@@ -703,21 +608,7 @@ private:
         }
 
         hello_timer.expires_from_now(boost::posix_time::seconds(AODV_HELLO_INTERVAL));
-        hello_timer.async_wait(boost::bind(&ad_hoc_client::send_hello, this));
-    }
-
-    void send_ack(int dest) {
-        ad_hoc_aodv_arc arc{AODV_ARC, id(), dest};
-        ad_hoc_message msg;
-        msg.sendid(id());
-        msg.receiveid(dest);
-        msg.sourceid(id());
-        msg.destid(dest);
-        msg.msg_type(AODV_MESSAGE);
-        msg.body_length(sizeof(arc));
-        memcpy(msg.body(), &arc, msg.body_length());
-        msg.encode_header();
-        write(msg);
+        hello_timer.async_wait(boost::bind(&bh_client::send_hello, this));
     }
 
     void aodv_msg_waiting_route_timeout(ad_hoc_message msg, const boost::system::error_code &err) {
@@ -725,7 +616,7 @@ private:
             msg_buffer.remove(msg);
             return;
         }
-        print("timeout", msg);
+        print("timeout",msg);
         msg_buffer.remove(msg);
     }
 
@@ -736,27 +627,25 @@ private:
     }
 
     void aodv_route_timeout(ad_hoc_client_routing_table_item &item, const boost::system::error_code &err) {
-#if AODV_ROUTE_TIMEOUT
         if (err == boost::asio::error::operation_aborted) {
             return;
         }
         cout << "route_timeout: " << item.dest << endl;
         routing_table_.remove(item.dest);
-#endif
+        routing_table_.print();
     }
 
     void aodv_neighbor_timeout(int neighbor, const boost::system::error_code &err) {
-#if AODV_NEIGHBOR_TIMEOUT
-        if (err == boost::asio::error::operation_aborted || watchdog.is_wormhole(neighbor)) {
+        if (err == boost::asio::error::operation_aborted) {
             return;
         }
         cout << "neighbor: " << neighbor << " timeout" << endl;
         auto dest_seq = routing_table_.route(neighbor).seq;
         routing_table_.remove(neighbor);
+        routing_table_.print();
         neighbors.remove(neighbor);
         send_rerr(neighbor, dest_seq);
         send_rreq(neighbor, dest_seq + 1);
-#endif
     }
 
     void do_close() {
@@ -776,14 +665,14 @@ private:
     ad_hoc_aodv_rreq_buffer rreq_buffer;
     ad_hoc_aodv_message_buffer msg_buffer;
     ad_hoc_aodv_neighbor_list neighbors;
-    ad_hoc_wormhole_watchdog watchdog;
     boost::asio::deadline_timer hello_timer;
     int aodv_seq;
     int aodv_rreq_id;
 
     ad_hoc_wormhole_client *wormhole_client;
     int wormhole;
-    unordered_map<int, bool> trust_list;
+
+
 };
 
 #endif //ADHOC_SIMULATION_CLIENT_H

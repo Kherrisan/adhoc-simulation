@@ -24,6 +24,7 @@ const int AODV_RREP = 2;
 const int AODV_RERR = 3;
 const int AODV_HELLO = 4;
 const int AODV_BACK = 5;
+const int AODV_ARC = 6;
 
 const int AODV_PATH_DISCOVERY_TIMEOUT = 30;
 const int AODV_HELLO_TIMEOUT = 30;
@@ -70,6 +71,12 @@ struct ad_hoc_aodv_rrep {
     int lifetime;
 };
 
+struct ad_hoc_aodv_arc {
+    int type;
+    int orig;
+    int dest;
+};
+
 struct ad_hoc_aodv_rerr {
     int type;
     int dest;
@@ -84,6 +91,8 @@ struct ad_hoc_aodv_back {
     int type;
     int sender;
     int receiver;
+    int msg_src;
+    int msg_dest;
 };
 
 class ad_hoc_client_routing_table_item {
@@ -112,18 +121,25 @@ public:
 
     void insert(ad_hoc_client_routing_table_item route) {
         routes[route.dest] = route;
+        print();
     }
 
     void remove(int id) {
+        routes[id].timer->cancel();
         routes.erase(id);
+        print();
     }
 
     void remove_by_next(int id) {
-        for (auto itr = routes.begin(); itr != routes.end(); itr++) {
+        for (auto itr = routes.begin(); itr != routes.end();) {
             if (itr->second.next_hop == id) {
-                routes.erase(itr->first);
+                itr->second.timer->cancel();
+                itr = routes.erase(itr);
+            } else {
+                itr++;
             }
         }
+        print();
     }
 
     int size() {
@@ -131,12 +147,12 @@ public:
     }
 
     void print() {
-        cout << left
+        cout << right
              << setw(8) << "dest" << "|"
              << setw(8) << "next" << "|"
              << setw(8) << "seq" << "|"
              << setw(8) << "hops" << endl;
-        for (int i = 0; i < 32; i++) {
+        for (int i = 0; i < 36; i++) {
             cout << "-";
         }
         cout << endl;
@@ -265,9 +281,21 @@ void print_aodv(const char *data) {
                  << rerr->dest_seq << endl;
             break;
         }
-        case AODV_HELLO:
+        case AODV_HELLO: {
             cout << "[hello]" << endl;
             break;
+        }
+        case AODV_BACK: {
+            auto back = (ad_hoc_aodv_back *) data;
+            cout << "[back] sender: " << back->sender << ", receiver: " << back->receiver << ", msg_src: "
+                 << back->msg_src << ", msg_dest: " << back->msg_dest << endl;
+            break;
+        }
+        case AODV_ARC: {
+            auto ack = (ad_hoc_aodv_arc *) data;
+            cout << "[ack] orig: " << ack->orig << ", dest: " << ack->dest << endl;
+            break;
+        }
     }
 }
 
