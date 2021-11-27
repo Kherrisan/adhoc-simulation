@@ -50,6 +50,7 @@ void print(const char *op, ad_hoc_message &msg) {
     }
 #else
     print_time();
+    cout << op << endl;
     if (msg.msg_type() == ORDINARY_MESSAGE) {
         cout << "[message] src: " << msg.sourceid() << ", dst: " << msg.destid() << ", sender: " << msg.sendid()
              << ", receiver: " << msg.receiveid() << ", type: " << msg.msg_type() << endl;

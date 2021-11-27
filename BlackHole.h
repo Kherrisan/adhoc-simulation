@@ -260,7 +260,7 @@ private:
             cout << endl;
 #endif
         } else {
-            cout << "Intercept success!" << endl;
+            print("intercept", msg);
         }
     }
 
@@ -353,7 +353,7 @@ private:
                                                                                             boost::posix_time::seconds(
                                                                                                     AODV_ACTIVE_ROUTE_TIMEOUT))};
             routing_table_.insert(route);
-            send_rrep(rreq.orig, rreq.dest, rreq.orig_seq, 1, msg.sendid());
+            send_rrep(rreq.orig, rreq.dest, rreq.orig_seq, 0, msg.sendid());
         }
 
     }
@@ -616,7 +616,7 @@ private:
             msg_buffer.remove(msg);
             return;
         }
-        print("timeout",msg);
+        print("timeout", msg);
         msg_buffer.remove(msg);
     }
 
@@ -671,8 +671,6 @@ private:
 
     ad_hoc_wormhole_client *wormhole_client;
     int wormhole;
-
-
 };
 
 #endif //ADHOC_SIMULATION_CLIENT_H
