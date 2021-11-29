@@ -164,7 +164,6 @@ private:
         if (!error) {
 #if DEBUG
             print("received", read_msg_);
-            routing_table_.print();
 #endif
             handle_message(read_msg_, false);
             boost::asio::async_read(socket,
@@ -284,7 +283,7 @@ private:
     }
 
     void aodv_restart_route_timer(ad_hoc_client_routing_table_item item) {
-#if DYNAMIC
+#if DYNAMIC && AODV_ROUTE_TIMEOUT
         if (item.timer == nullptr) {
             item.timer = make_shared<boost::asio::deadline_timer>(io_context);
         }
@@ -325,7 +324,6 @@ private:
             routing_table_.insert(route);
             aodv_restart_route_timer(route);
         }
-        routing_table_.print();
 
         if (rreq_buffer.contains(rreq.orig, rreq.id)) {
             return;
@@ -416,8 +414,6 @@ private:
                 forward_rrep(msg, route.next_hop);
             }
         }
-
-        routing_table_.print();
     }
 
     void handle_rerr(ad_hoc_message &msg, ad_hoc_aodv_rerr &rerr, bool through_wormhole) {
@@ -433,7 +429,6 @@ private:
                 } else {
                     broadcast_rerr(msg);
                 }
-                routing_table_.print();
             }
         }
     }
@@ -463,7 +458,6 @@ private:
                                                                                                 boost::posix_time::seconds(
                                                                                                         AODV_ACTIVE_ROUTE_TIMEOUT))};
                 routing_table_.insert(route);
-                routing_table_.print();
                 aodv_restart_route_timer(route);
             }
         }
@@ -627,25 +621,27 @@ private:
     }
 
     void aodv_route_timeout(ad_hoc_client_routing_table_item &item, const boost::system::error_code &err) {
+#if AODV_ROUTE_TIMEOUT
         if (err == boost::asio::error::operation_aborted) {
             return;
         }
         cout << "route_timeout: " << item.dest << endl;
         routing_table_.remove(item.dest);
-        routing_table_.print();
+#endif
     }
 
     void aodv_neighbor_timeout(int neighbor, const boost::system::error_code &err) {
+#if AODV_NEIGHBOR_TIMEOUT
         if (err == boost::asio::error::operation_aborted) {
             return;
         }
         cout << "neighbor: " << neighbor << " timeout" << endl;
         auto dest_seq = routing_table_.route(neighbor).seq;
         routing_table_.remove(neighbor);
-        routing_table_.print();
         neighbors.remove(neighbor);
         send_rerr(neighbor, dest_seq);
         send_rreq(neighbor, dest_seq + 1);
+#endif
     }
 
     void do_close() {

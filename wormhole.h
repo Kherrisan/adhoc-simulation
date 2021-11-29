@@ -62,9 +62,9 @@ public:
             neighbor_diff_map[neighbor] = ad_hoc_wormhole_watchdog_item{0};
         }
         neighbor_diff_map[neighbor].diff++;
-//#if DEBUG
+#if DEBUG
         print();
-//#endif
+#endif
     }
 
     void increment_tx(int neighbor) {
