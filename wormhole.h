@@ -32,20 +32,22 @@ struct ad_hoc_wormhole_watchdog_item {
 class ad_hoc_wormhole_watchdog {
 public:
     void handle_back(ad_hoc_aodv_back &back, ad_hoc_client_routing_table &routing_table) {
-        if (back.receiver != back.msg_dest) {
+        if (back.receiver != back.msg_dest && routing_table.contains(back.receiver) &&
+            routing_table.route(back.receiver).next_hop == back.receiver) {
             increment_rx(back.receiver);
         }
-        if (back.sender != back.msg_src) {
+        if (back.sender != back.msg_src && routing_table.contains(back.sender) &&
+            routing_table.route(back.sender).next_hop == back.sender) {
             increment_tx(back.sender);
         }
 #if DEBUG
         print();
 #endif
-        check(back.receiver, routing_table);
-        check(back.sender, routing_table);
+        check_print(back.receiver, routing_table);
+        check_print(back.sender, routing_table);
     }
 
-    void check(int id, ad_hoc_client_routing_table &routing_table) {
+    void check_print(int id, ad_hoc_client_routing_table &routing_table) {
         if (neighbor_diff_map[id].diff < -AODV_WORMHOLE_DIFF_THRESHOLD) {
             //rx-tx<0，收的少发的多
             cout << "found a wormhole node: " << id << endl;

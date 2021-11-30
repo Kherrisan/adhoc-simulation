@@ -7,10 +7,11 @@
 
 #include "message.h"
 
-#define DEBUG false
+#define DEBUG true
 #define DYNAMIC true
 #define AODV_ROUTE_TIMEOUT false
 #define AODV_NEIGHBOR_TIMEOUT false
+#define BINDING_PORT true
 
 void print_time() {
     time_t now = time(nullptr);
