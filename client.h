@@ -49,11 +49,13 @@ public:
         aodv_seq = 0;
         aodv_rreq_id = 0;
         //第一个参数指向某个IP主机的IP端口，第二个是偏函数对象，实际代码地址指向成员函数handle_connect
+#if BINDING_PORT
         socket.open(boost::asio::ip::tcp::v4());
         socket.bind(tcp::endpoint(
                 boost::asio::ip::address::from_string("127.0.0.1"),
                 id
         ));
+#endif
         socket.async_connect(endpoint,
                              boost::bind(
                                      &ad_hoc_client::handle_connect,
@@ -72,7 +74,7 @@ public:
         *
         * @param msg 待发消息
         */
-    void write(const ad_hoc_message msg) {
+    void write(ad_hoc_message msg) {
         if (wormhole == -1 && watchdog.is_malicious(msg.receiveid())) {
             return;
         }
@@ -126,6 +128,7 @@ public:
         msg.destid(dest);
         msg.sourceid(id());
         msg.sendid(id());
+        msg.receiveid(-1);
         msg.encode_header();
         write(msg);
     }
@@ -241,9 +244,7 @@ private:
         if (wormhole == -1 && watchdog.is_malicious(msg.receiveid())) {
             return;
         }
-//        if ((routing_table_.contains(msg.destid()) && trust_list[routing_table_.route(msg.destid()).next_hop]) ||
-        if (routing_table_.contains(msg.destid()) ||
-            msg.receiveid() == AODV_BROADCAST_ADDRESS) {
+        if (routing_table_.contains(msg.destid()) || msg.receiveid() == AODV_BROADCAST_ADDRESS) {
             if (routing_table_.contains(msg.destid())) {
                 auto route = routing_table_.route(msg.destid());
                 //重新启动该路由表项的定时器
@@ -253,14 +254,13 @@ private:
             msg.sendid(id());
             msg.encode_header();
 #if DEBUG
-            LOG_SENDING(msg);
+            print("do_write", msg);
 #endif
             bool write_in_progress = !write_msgs_.empty();
             write_msgs_.push_back(msg);
             if (!write_in_progress) {
                 if (msg.msg_type() == ORDINARY_MESSAGE) {
                     broadcast_back(msg);
-                    trust_list[routing_table_.route(msg.destid()).next_hop] = false;
                 }
                 boost::asio::async_write(socket,
                                          boost::asio::buffer(write_msgs_.front().data(),
@@ -376,7 +376,6 @@ private:
                                                                                                     AODV_ACTIVE_ROUTE_TIMEOUT))};
             routing_table_.insert(route);
             aodv_restart_route_timer(route);
-            trust_list[route.next_hop] = true;
         }
 
 #if DEBUG
@@ -448,7 +447,6 @@ private:
                     dest_route.hops = current_hops;
                     dest_route.next_hop = msg.sendid();
                     routing_table_.insert(dest_route);
-                    trust_list[dest_route.next_hop] = true;
                     aodv_restart_route_timer(routing_table_.route(rrep.dest));
                 }
             } else {
@@ -458,13 +456,14 @@ private:
                                                                                                         AODV_ACTIVE_ROUTE_TIMEOUT))};
                 routing_table_.insert(route);
                 aodv_restart_route_timer(route);
-                trust_list[route.next_hop] = true;
             }
 
-            for (auto msg = msg_buffer.msg_timer_map.begin(); msg != msg_buffer.msg_timer_map.end(); msg++) {
-                if (msg->first.destid() == rrep.dest) {
-                    write(msg->first);
-                    msg->second->cancel();
+            for (auto buffered_msg = msg_buffer.msg_timer_map.begin(); buffered_msg != msg_buffer.msg_timer_map.end();) {
+                if (buffered_msg->first.destid() == rrep.dest) {
+                    write(buffered_msg->first);
+                    buffered_msg = msg_buffer.msg_timer_map.erase(buffered_msg);
+                }else{
+                    buffered_msg++;
                 }
             }
 
@@ -479,7 +478,6 @@ private:
                                                                                                 boost::posix_time::seconds(
                                                                                                         AODV_ACTIVE_ROUTE_TIMEOUT))};
                 routing_table_.insert(route);
-                trust_list[route.next_hop] = true;
                 aodv_restart_route_timer(routing_table_.route(rrep.dest));
             }
 
@@ -554,7 +552,6 @@ private:
                                                                                                 boost::posix_time::seconds(
                                                                                                         AODV_ACTIVE_ROUTE_TIMEOUT))};
                 routing_table_.insert(route);
-                trust_list[route.next_hop] = true;
 #if DEBUG
 
 #endif
@@ -565,7 +562,6 @@ private:
 
     void handle_arc(ad_hoc_message &msg, ad_hoc_aodv_arc &arc) {
         cout << "send success in this hop" << endl;
-        trust_list[msg.sendid()] = true;
     }
 
     void broadcast_rreq(ad_hoc_message &msg, ad_hoc_aodv_rreq &rreq) {
@@ -783,7 +779,6 @@ private:
 
     ad_hoc_wormhole_client *wormhole_client;
     int wormhole;
-    unordered_map<int, bool> trust_list;
 };
 
 #endif //ADHOC_SIMULATION_CLIENT_H

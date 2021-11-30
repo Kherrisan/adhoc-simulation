@@ -138,7 +138,7 @@ public:
      *
      * @param msg 待发消息
      */
-    void write(const ad_hoc_message &msg) {
+    void write(const ad_hoc_message msg) {
         io_context.post(boost::bind(&ad_hoc_wormhole_client::do_write, this, msg));
     }
 

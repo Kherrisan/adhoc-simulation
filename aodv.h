@@ -209,7 +209,7 @@ public:
         msg_timer_map.erase(msg);
     }
 
-    timer_ptr new_timer(boost::asio::io_context &io_context, ad_hoc_message &msg) {
+    timer_ptr new_timer(boost::asio::io_context &io_context, ad_hoc_message msg) {
         msg_timer_map[msg] = make_shared<boost::asio::deadline_timer>(io_context, boost::posix_time::seconds(
                 AODV_MESSAGE_WAITING_ROUTE_TIMEOUT));
         return msg_timer_map[msg];
