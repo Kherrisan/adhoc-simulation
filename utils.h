@@ -7,7 +7,7 @@
 
 #include "message.h"
 
-#define DEBUG true
+#define DEBUG false
 #define DYNAMIC true
 #define AODV_ROUTE_TIMEOUT false
 #define AODV_NEIGHBOR_TIMEOUT false
